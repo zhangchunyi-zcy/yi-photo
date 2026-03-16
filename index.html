@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Yi — 摄影作品集</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="works-body">
+  <header class="site-header">
+    <a href="index.html" class="site-title">Yi</a>
+    <nav class="site-nav">
+      <a href="index.html" class="nav-link active">Home</a>
+      <a href="contact.html" class="nav-link">Contact</a>
+    </nav>
+  </header>
+
+  <main class="works-page">
+    <aside class="thumb-rail" aria-label="作品列表">
+      <div class="thumb-list" id="thumbList">
+        <div class="thumb-list-inner" id="thumbListInner"></div>
+      </div>
+    </aside>
+    <div class="caption-zone">
+      <p class="caption-text" id="captionWrap">
+        <span class="caption-line1" id="captionLine1"></span>
+        <span class="caption-line2" id="captionLine2"></span>
+      </p>
+    </div>
+    <div class="main-image-zone">
+      <div class="main-image-wrap" id="mainImageWrap">
+        <img class="main-image" id="mainImage" src="" alt="" />
+      </div>
+    </div>
+  </main>
+
+  <!-- 动画用克隆层，避免影响布局 -->
+  <div class="transition-layer" id="transitionLayer" aria-hidden="true"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

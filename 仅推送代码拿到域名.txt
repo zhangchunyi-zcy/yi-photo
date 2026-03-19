@@ -1,0 +1,33 @@
+# 不用 SSH，用 HTTPS + 先不推照片，拿到 Vercel 域名
+
+（.gitignore 里已有 photos/，下面会从提交历史里去掉照片，只推代码。）
+
+在终端依次执行：
+
+cd "/Users/91002302/Desktop/摄影作品集网站"
+
+git remote set-url origin https://github.com/zhangchunyi-zcy/yi-photo.git
+
+git rm -r --cached "photos/"
+
+git add .
+
+git commit --amend -m "Initial: 摄影作品集网站（不含照片）"
+
+git push -u origin main
+
+---
+推送时提示：
+  Username: zhangchunyi-zcy
+  Password: 粘贴你的 GitHub 个人访问令牌（不是登录密码）
+
+---
+推送成功后：
+1. 打开 https://vercel.com 用 GitHub 登录
+2. Add New → Project → 选 yi-photo → Deploy
+3. 部署完成后得到域名，如 https://yi-photo-xxx.vercel.app
+
+---
+注意：当前线上站点没有图片（照片在本地，未推上去）。后续可：
+- 把照片上传到图床或对象存储，在 js/data.js 里把 src 改成外链；或
+- 换网络/用梯子后再用 Git LFS 推照片。

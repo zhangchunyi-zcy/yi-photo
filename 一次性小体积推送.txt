@@ -1,0 +1,26 @@
+# 一次性生成「无照片」新历史，保证推送体积小
+
+在终端依次执行（整段复制粘贴也可以）：
+
+cd "/Users/91002302/Desktop/摄影作品集网站"
+
+git remote set-url origin https://github.com/zhangchunyi-zcy/yi-photo.git
+
+git checkout --orphan temp
+
+git rm -r --cached "photos/" 2>/dev/null; true
+
+git add .
+
+git commit -m "Initial: 摄影作品集网站（不含照片）"
+
+git branch -D main
+
+git branch -m main
+
+git push -u origin main
+
+---
+提示 Password 时：粘贴 GitHub 个人访问令牌（不是登录密码）。
+
+这样只会推约几 MB 的代码，不含 230MB 照片，一般能成功。成功后到 vercel.com 导入 yi-photo 部署即可拿域名。

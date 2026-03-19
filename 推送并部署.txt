@@ -1,0 +1,36 @@
+# 已完成的步骤
+✅ git init
+✅ git add .
+✅ git commit -m "Initial: 摄影作品集网站"
+
+# 你需要完成的步骤（按顺序）
+
+## 第一步：在 GitHub 新建仓库
+1. 打开 https://github.com/new
+2. 仓库名填：photo-portfolio（或任意英文名）
+3. 选 Public，不要勾选 "Add a README file"
+4. 点 Create repository
+5. 记下页面里显示的仓库地址，例如：https://github.com/你的用户名/photo-portfolio.git
+
+## 第二步：在终端执行（把下面的地址换成你的仓库地址）
+cd "/Users/91002302/Desktop/摄影作品集网站"
+git remote add origin https://github.com/你的用户名/你的仓库名.git
+git branch -M main
+git push -u origin main
+
+（首次 push 会提示登录 GitHub，按提示操作即可）
+
+## 第三步：在 Vercel 部署拿域名
+1. 打开 https://vercel.com 用 GitHub 登录
+2. 点 Add New... → Project
+3. 在列表里选刚推送的仓库（如 photo-portfolio）→ Import
+4. Framework Preset 保持 Other，直接点 Deploy
+5. 等 1～2 分钟，部署完成后会显示你的域名，例如：
+   https://photo-portfolio-xxxx.vercel.app
+6. 复制该链接即可分享给他人访问
+
+之后若更新网站：改完代码后执行
+  git add .
+  git commit -m "更新说明"
+  git push
+Vercel 会自动重新部署。

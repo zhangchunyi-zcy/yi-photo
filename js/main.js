@@ -27,6 +27,8 @@
   var TOUCH_DAMP = 0.55;
   /** 动画进行中由滚动推导的「待切换」索引，解决快速滑动时漏切 / 错乱 */
   var pendingTargetIndex = null;
+  /** 防止同一次切换里 startAnim / setTimeout 重复执行（缓存图会 onload + complete 各触发一次） */
+  var activeTransitionId = 0;
   var touchLastY = null;
   var touchScrollRaf = null;
 
@@ -386,8 +388,15 @@
 
     var nextSrc = data[nextIndex].src;
     var nextImg = new Image();
+    var startAnimOnce = false;
+    var thisTransitionId = ++activeTransitionId;
 
     function startAnim() {
+      if (startAnimOnce) return;
+      startAnimOnce = true;
+      while (transitionLayer.firstChild) {
+        transitionLayer.removeChild(transitionLayer.firstChild);
+      }
       var mainImgRect = getRect(mainImage);
       setLandscapeFromIndex(nextIndex);
       var wrapRect = getRect(mainImageWrap);
@@ -428,6 +437,8 @@
       }
 
       mainImage.style.visibility = "hidden";
+      mainImage.style.opacity = "0";
+      mainImage.setAttribute("data-transitioning", "1");
       cloneOut.style.transition = "none";
       cloneIn.style.transition = "none";
       cloneOut.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
@@ -445,11 +456,11 @@
       });
 
       setTimeout(function () {
+        if (thisTransitionId !== activeTransitionId) return;
         cloneOut.style.willChange = "";
         cloneIn.style.willChange = "";
-        transitionLayer.removeChild(cloneOut);
-        transitionLayer.removeChild(cloneIn);
-        mainImage.style.visibility = "";
+        if (cloneOut.parentNode === transitionLayer) transitionLayer.removeChild(cloneOut);
+        if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
         currentIndex = nextIndex;
         updateCurrentClass();
         setLandscapeFromIndex(nextIndex);
@@ -459,24 +470,32 @@
         if (mainImage.complete) updateLandscapeClass();
         else { setTimeout(updateLandscapeClass, 100); setTimeout(updateLandscapeClass, 400); }
         snapScrollToIndex(nextIndex);
-        isAnimating = false;
-        /* 快滑时：动画期间列表已滚到更远的项，补切到 pending 目标 */
-        var flush = pendingTargetIndex;
-        pendingTargetIndex = null;
-        if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
+        requestAnimationFrame(function () {
           requestAnimationFrame(function () {
-            runTransition(flush, callback, true);
+            mainImage.style.visibility = "";
+            mainImage.style.opacity = "";
+            mainImage.removeAttribute("data-transitioning");
+            isAnimating = false;
+            var flush = pendingTargetIndex;
+            pendingTargetIndex = null;
+            if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
+              requestAnimationFrame(function () {
+                runTransition(flush, callback, true);
+              });
+            } else if (callback) {
+              callback();
+            }
           });
-        } else if (callback) {
-          callback();
-        }
+        });
       }, transitionDuration);
     }
 
     nextImg.onload = startAnim;
     nextImg.onerror = startAnim;
     nextImg.src = nextSrc;
-    if (nextImg.complete) startAnim();
+    if (nextImg.complete) {
+      startAnim();
+    }
   }
 
   function onThumbClick(e) {

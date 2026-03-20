@@ -20,10 +20,12 @@
   var SCROLL_END_DELAY = 220;
   var TRANSITION_LOCK_MS = 480;
   var SNAP_LOCK_MS = 280;
-  var TRIGGER_THROTTLE_MS = 320;
-  /** 滚轮阻尼：原 delta 过大易一次跨过多张；触摸像素增量单独处理 */
-  var WHEEL_DAMP = 0.2;
+  var TRIGGER_THROTTLE_MS = 280;
+  /** 桌面滚轮阻尼（略提高，避免过钝）；触摸单独处理 */
+  var WHEEL_DAMP = 0.38;
   var TOUCH_DAMP = 0.55;
+  /** 动画进行中由滚动推导的「待切换」索引，解决快速滑动时漏切 / 错乱 */
+  var pendingTargetIndex = null;
   var touchLastY = null;
   var touchScrollRaf = null;
 
@@ -217,13 +219,18 @@
 
   function checkTriggerAndTransition() {
     rafScheduled = false;
-    if (isAnimating || Date.now() < transitionLockUntil) return;
-    if (Date.now() - lastTriggerTime < TRIGGER_THROTTLE_MS) return;
     var idx = getIndexFromScrollOffset();
     if (idx !== currentIndex && idx >= 0) {
-      lastTriggerTime = Date.now();
-      runTransition(idx, null, true);
+      pendingTargetIndex = idx;
     }
+    if (isAnimating) return;
+    if (Date.now() < transitionLockUntil) return;
+    if (Date.now() - lastTriggerTime < TRIGGER_THROTTLE_MS) return;
+    if (pendingTargetIndex === null || pendingTargetIndex === currentIndex) return;
+    lastTriggerTime = Date.now();
+    var go = pendingTargetIndex;
+    pendingTargetIndex = null;
+    runTransition(go, null, true);
   }
 
   function onScrollEnd() {
@@ -255,7 +262,8 @@
     setScrollOffset(scrollOffsetPx + delta);
     if (scrollEndTimer) clearTimeout(scrollEndTimer);
     scrollEndTimer = setTimeout(onScrollEnd, SCROLL_END_DELAY);
-    if (!rafScheduled && !isAnimating && Date.now() >= transitionLockUntil) {
+    /* 动画进行中也要 rAF，持续更新 pendingTargetIndex，避免快滑结束只对上最后一张 */
+    if (!rafScheduled) {
       rafScheduled = true;
       requestAnimationFrame(checkTriggerAndTransition);
     }
@@ -298,7 +306,15 @@
     var wrap = document.createElement("div");
     wrap.className = "clone";
     wrap.style.cssText =
-      "left:" + rect.x + "px;top:" + rect.y + "px;width:" + rect.w + "px;height:" + rect.h + "px;";
+      "left:" +
+      rect.x +
+      "px;top:" +
+      rect.y +
+      "px;width:" +
+      rect.w +
+      "px;height:" +
+      rect.h +
+      "px;transform-origin:0 0;";
     var img = document.createElement("img");
     img.src = src;
     img.width = rect.w;
@@ -313,6 +329,7 @@
 
   function runTransition(nextIndex, callback, fromWheel) {
     if (nextIndex === currentIndex || isAnimating || !data[nextIndex]) return;
+    if (!fromWheel) pendingTargetIndex = null;
     isAnimating = true;
     transitionLockUntil = Date.now() + transitionDuration + 400;
 
@@ -417,10 +434,18 @@
         setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
         if (mainImage.complete) updateLandscapeClass();
         else { setTimeout(updateLandscapeClass, 100); setTimeout(updateLandscapeClass, 400); }
-        /* 滚轮/触摸切换后必须对齐列表，否则 offset 仍跨多格会连续跳张 */
         snapScrollToIndex(nextIndex);
         isAnimating = false;
-        if (callback) callback();
+        /* 快滑时：动画期间列表已滚到更远的项，补切到 pending 目标 */
+        var flush = pendingTargetIndex;
+        pendingTargetIndex = null;
+        if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
+          requestAnimationFrame(function () {
+            runTransition(flush, callback, true);
+          });
+        } else if (callback) {
+          callback();
+        }
       }, transitionDuration);
     }
 

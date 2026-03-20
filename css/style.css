@@ -371,8 +371,8 @@ img {
     /* 列间距：缩略图与右栏；行间距：标题与大图（尽量贴紧） */
     row-gap: 2px;
     column-gap: var(--space-md);
-    /* 主内容区顶距：原 space-xs，与标题区顶距同比例 ×1.8（相对导航栏下方留白） */
-    padding: calc(var(--space-xs) * 1.8) var(--space-md) max(4px, env(safe-area-inset-bottom, 0px));
+    /* 主内容区顶距：×2（相对原 space-xs），标题整体下移、离导航更远 */
+    padding: calc(var(--space-xs) * 2) var(--space-md) max(4px, env(safe-area-inset-bottom, 0px));
     align-items: stretch;
     align-content: stretch;
     min-height: 0;
@@ -409,8 +409,8 @@ img {
     align-self: start;
     min-width: 0;
     padding-bottom: 0;
-    /* 相对导航栏：原 space-sm，现为 1.8 倍；与 .works-page 顶 padding 同比例放大 */
-    padding-top: calc(var(--space-sm) * 1.8);
+    /* 标题相对导航：原 space-sm 的 2 倍，确保明显下移 */
+    padding-top: calc(var(--space-sm) * 2);
   }
 
   .caption-line1 {
@@ -484,7 +484,7 @@ img {
   }
 
   .works-page {
-    padding: calc(var(--space-xs) * 1.8) var(--space-sm) max(2px, env(safe-area-inset-bottom, 0px));
+    padding: calc(var(--space-xs) * 2) var(--space-sm) max(2px, env(safe-area-inset-bottom, 0px));
     row-gap: 2px;
     column-gap: var(--space-sm);
     grid-template-columns: auto minmax(0, 1fr);

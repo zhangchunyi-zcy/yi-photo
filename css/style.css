@@ -368,7 +368,9 @@ img {
     grid-template-areas:
       "thumb caption"
       "thumb main";
-    gap: var(--space-sm) var(--space-md);
+    /* 列间距：缩略图与右栏；行间距：标题与大图（略小，让标题更贴近大图） */
+    row-gap: var(--space-xs);
+    column-gap: var(--space-md);
     padding: var(--space-xs) var(--space-md) max(4px, env(safe-area-inset-bottom, 0px));
     align-items: stretch;
     align-content: stretch;
@@ -398,14 +400,16 @@ img {
 
   .caption-zone {
     grid-area: caption;
-    padding-left: 0;
+    padding-left: var(--space-md);
     margin-left: 0;
     margin-right: 0;
     justify-content: flex-start;
     align-items: flex-start;
     align-self: start;
     min-width: 0;
-    padding-bottom: var(--space-xs);
+    /* 与下方大图更近：减少标题块底距（行间距已由 row-gap 承担） */
+    padding-bottom: 0;
+    padding-top: var(--space-xs);
   }
 
   .caption-line1 {
@@ -480,7 +484,8 @@ img {
 
   .works-page {
     padding: var(--space-xs) var(--space-sm) max(2px, env(safe-area-inset-bottom, 0px));
-    gap: var(--space-xs) var(--space-sm);
+    row-gap: var(--space-xs);
+    column-gap: var(--space-sm);
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:

@@ -12,7 +12,8 @@
   var currentIndex = 0;
   var isAnimating = false;
   var transitionDuration = 400;
-  var transitionEase = "cubic-bezier(0.22, 1, 0.36, 1)";
+  /** 位移+缩放同一缓动：贝塞尔，观感为「边移边放大」 */
+  var transitionEase = "cubic-bezier(0.45, 0.05, 0.25, 1)";
   var scrollEndTimer = null;
   var transitionLockUntil = 0;
   var rafScheduled = false;
@@ -187,6 +188,43 @@
     return { x: r.left, y: r.top, w: r.width, h: r.height };
   }
 
+  /** 缩略列表里某张图的真实显示矩形（与主图同一宽高比，避免用方槽压扁） */
+  function getThumbImgRect(index) {
+    var img = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"] img');
+    return img ? getRect(img) : null;
+  }
+
+  /**
+   * 下一张图在 mainImageWrap 内 object-fit:contain 的显示矩形（左顶点与页面一致）
+   * 与 CSS 中横图右对齐 / 移动端居中一致
+   */
+  function getContainRectInWrap(natW, natH, wrapRect, isLandscape, isMobile) {
+    if (!natW || !natH || !wrapRect.w || !wrapRect.h) return null;
+    var scale = Math.min(wrapRect.w / natW, wrapRect.h / natH);
+    var iw = natW * scale;
+    var ih = natH * scale;
+    var x;
+    var y = wrapRect.y + (wrapRect.h - ih) / 2;
+    if (isLandscape && !isMobile) {
+      x = wrapRect.x + wrapRect.w - iw;
+    } else {
+      x = wrapRect.x + (wrapRect.w - iw) / 2;
+    }
+    return { x: x, y: y, w: iw, h: ih };
+  }
+
+  /** 左顶点对齐 + 等比缩放：translate 与单一 scale，避免非等比压扁 */
+  function uniformFlipTransform(start, end) {
+    var sx = end.w / start.w;
+    var sy = end.h / start.h;
+    var s = Math.abs(sx - sy) < 0.02 ? sx : Math.min(sx, sy);
+    return {
+      dx: end.x - start.x,
+      dy: end.y - start.y,
+      s: s,
+    };
+  }
+
   /** 滑动结束：将最接近触发线中心的非当前项对齐到中心 */
   function snapToNearestItem() {
     if (isAnimating || Date.now() < transitionLockUntil) return;
@@ -208,13 +246,7 @@
   }
 
   function getSlotRectForIndex(index) {
-    var el = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"]');
-    if (!el) return null;
-    var r = el.getBoundingClientRect();
-    var w = getThumbWidthPx();
-    var h = w;
-    if (mainImage.clientWidth > 0) h = w * (mainImage.clientHeight / mainImage.clientWidth);
-    return { x: r.left, y: r.top, w: w, h: h };
+    return getThumbImgRect(index);
   }
 
   function checkTriggerAndTransition() {
@@ -314,14 +346,14 @@
       rect.w +
       "px;height:" +
       rect.h +
-      "px;transform-origin:0 0;";
+      "px;transform-origin:0 0;overflow:hidden;";
     var img = document.createElement("img");
     img.src = src;
-    img.width = rect.w;
-    img.height = rect.h;
     img.style.width = "100%";
     img.style.height = "100%";
     img.style.display = "block";
+    img.style.objectFit = "contain";
+    img.style.objectPosition = "left top";
     img.decoding = "async";
     wrap.appendChild(img);
     return wrap;
@@ -334,41 +366,53 @@
     transitionLockUntil = Date.now() + transitionDuration + 400;
 
     var prevIndex = currentIndex;
-    var mainRect = getRect(mainImageWrap);
     var toThumb = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"]');
     if (!toThumb) {
       isAnimating = false;
       if (callback) callback();
       return;
     }
-    var toRect = getRect(toThumb);
-    var fromRect;
-    if (fromWheel) {
-      fromRect = getSlotRectForIndex(prevIndex);
-      if (!fromRect) {
-        isAnimating = false;
-        if (callback) callback();
-        return;
-      }
-    } else {
+    var fromThumbRect = getThumbImgRect(prevIndex);
+    var nextThumbRect = getThumbImgRect(nextIndex);
+    if (!fromThumbRect || !nextThumbRect) {
+      isAnimating = false;
+      if (callback) callback();
+      return;
+    }
+    if (!fromWheel) {
       currentIndex = nextIndex;
       updateCurrentClass();
-      var fromItem = thumbListInner.querySelector('.thumb-item[data-index="' + prevIndex + '"]');
-      if (!fromItem) {
-        isAnimating = false;
-        if (callback) callback();
-        return;
-      }
-      fromRect = getRect(fromItem);
     }
 
     var nextSrc = data[nextIndex].src;
+    var nextImg = new Image();
 
     function startAnim() {
-      var cloneOut = createClone(data[prevIndex].src, mainRect);
+      var mainImgRect = getRect(mainImage);
+      setLandscapeFromIndex(nextIndex);
+      var wrapRect = getRect(mainImageWrap);
+      var isMobile = window.matchMedia("(max-width: 900px)").matches;
+      var endMainRect;
+      if (nextImg.naturalWidth > 0 && nextImg.naturalHeight > 0) {
+        endMainRect = getContainRectInWrap(
+          nextImg.naturalWidth,
+          nextImg.naturalHeight,
+          wrapRect,
+          mainImageWrap.classList.contains("is-landscape"),
+          isMobile
+        );
+      }
+      if (!endMainRect) {
+        endMainRect = mainImgRect;
+      }
+
+      var outT = uniformFlipTransform(mainImgRect, fromThumbRect);
+      var inT = uniformFlipTransform(nextThumbRect, endMainRect);
+
+      var cloneOut = createClone(data[prevIndex].src, mainImgRect);
       cloneOut.style.zIndex = "1";
       cloneOut.style.willChange = "transform";
-      var cloneIn = createClone(nextSrc, toRect);
+      var cloneIn = createClone(nextSrc, nextThumbRect);
       cloneIn.style.zIndex = "2";
       cloneIn.style.willChange = "transform";
       transitionLayer.appendChild(cloneOut);
@@ -393,30 +437,10 @@
         requestAnimationFrame(function () {
           cloneOut.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
           cloneIn.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
-          var scaleOutX = fromRect.w / mainRect.w;
-          var scaleOutY = fromRect.h / mainRect.h;
           cloneOut.style.transform =
-            "translate3d(" +
-            (fromRect.x - mainRect.x) +
-            "px," +
-            (fromRect.y - mainRect.y) +
-            "px,0) scale3d(" +
-            scaleOutX +
-            "," +
-            scaleOutY +
-            ",1)";
-          var scaleInX = mainRect.w / toRect.w;
-          var scaleInY = mainRect.h / toRect.h;
+            "translate3d(" + outT.dx + "px," + outT.dy + "px,0) scale3d(" + outT.s + "," + outT.s + ",1)";
           cloneIn.style.transform =
-            "translate3d(" +
-            (mainRect.x - toRect.x) +
-            "px," +
-            (mainRect.y - toRect.y) +
-            "px,0) scale3d(" +
-            scaleInX +
-            "," +
-            scaleInY +
-            ",1)";
+            "translate3d(" + inT.dx + "px," + inT.dy + "px,0) scale3d(" + inT.s + "," + inT.s + ",1)";
         });
       });
 
@@ -449,7 +473,6 @@
       }, transitionDuration);
     }
 
-    var nextImg = new Image();
     nextImg.onload = startAnim;
     nextImg.onerror = startAnim;
     nextImg.src = nextSrc;

@@ -368,8 +368,8 @@ img {
     grid-template-areas:
       "thumb caption"
       "thumb main";
-    /* 列间距：缩略图与右栏；行间距：标题与大图（略小，让标题更贴近大图） */
-    row-gap: var(--space-xs);
+    /* 列间距：缩略图与右栏；行间距：标题与大图（尽量贴紧） */
+    row-gap: 2px;
     column-gap: var(--space-md);
     padding: var(--space-xs) var(--space-md) max(4px, env(safe-area-inset-bottom, 0px));
     align-items: stretch;
@@ -407,9 +407,9 @@ img {
     align-items: flex-start;
     align-self: start;
     min-width: 0;
-    /* 与下方大图更近：减少标题块底距（行间距已由 row-gap 承担） */
     padding-bottom: 0;
-    padding-top: var(--space-xs);
+    /* 标题略下移，整体更贴近下方大图 */
+    padding-top: var(--space-sm);
   }
 
   .caption-line1 {
@@ -484,7 +484,7 @@ img {
 
   .works-page {
     padding: var(--space-xs) var(--space-sm) max(2px, env(safe-area-inset-bottom, 0px));
-    row-gap: var(--space-xs);
+    row-gap: 2px;
     column-gap: var(--space-sm);
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);

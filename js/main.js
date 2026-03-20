@@ -11,17 +11,21 @@
   var data = window.PHOTOS_DATA || [];
   var currentIndex = 0;
   var isAnimating = false;
-  var transitionDuration = 420;
-  var linearEase = "linear";
-  var thumbWidth = 72;
+  var transitionDuration = 400;
+  var transitionEase = "cubic-bezier(0.22, 1, 0.36, 1)";
   var scrollEndTimer = null;
   var transitionLockUntil = 0;
   var rafScheduled = false;
   var lastTriggerTime = 0;
-  var SCROLL_END_DELAY = 180;
+  var SCROLL_END_DELAY = 220;
   var TRANSITION_LOCK_MS = 480;
   var SNAP_LOCK_MS = 280;
-  var TRIGGER_THROTTLE_MS = 200;
+  var TRIGGER_THROTTLE_MS = 320;
+  /** 滚轮阻尼：原 delta 过大易一次跨过多张；触摸像素增量单独处理 */
+  var WHEEL_DAMP = 0.2;
+  var TOUCH_DAMP = 0.55;
+  var touchLastY = null;
+  var touchScrollRaf = null;
 
   var thumbListEl = document.getElementById("thumbList");
   var thumbListInner = document.getElementById("thumbListInner");
@@ -39,6 +43,12 @@
 
   function getTriggerY() {
     return headerEl ? headerEl.getBoundingClientRect().bottom + 2 : 80;
+  }
+
+  function getThumbWidthPx() {
+    var first = thumbListInner && thumbListInner.querySelector(".thumb-item");
+    if (first) return first.getBoundingClientRect().width;
+    return 72;
   }
 
   function updateLandscapeClass() {
@@ -72,7 +82,9 @@
       var img = document.createElement("img");
       img.src = item.src;
       img.alt = item.caption || "作品 " + (i + 1);
-      img.loading = i < 20 ? "eager" : "lazy";
+      /* 仅首屏附近 eager：缩略图与主图共用原图，过多 eager 会拖垮首屏 */
+      img.loading = i < 6 ? "eager" : "lazy";
+      img.decoding = "async";
       img.addEventListener("load", function (idx) {
         return function () { if (idx === currentIndex) setLandscapeFromIndex(idx); };
       }(i));
@@ -197,7 +209,7 @@
     var el = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"]');
     if (!el) return null;
     var r = el.getBoundingClientRect();
-    var w = thumbWidth;
+    var w = getThumbWidthPx();
     var h = w;
     if (mainImage.clientWidth > 0) h = w * (mainImage.clientHeight / mainImage.clientWidth);
     return { x: r.left, y: r.top, w: w, h: h };
@@ -218,21 +230,28 @@
     if (!isAnimating && Date.now() >= transitionLockUntil) snapToNearestItem();
   }
 
-  function onWheel(e) {
-    var delta = e.deltaY;
+  /** 统一处理虚拟列表位移：滚轮（阻尼）与触摸（像素） */
+  function applyScrollDelta(rawDelta, opts) {
+    opts = opts || {};
+    var delta = rawDelta;
+    if (opts.fromWheel) {
+      var mode = opts.deltaMode != null ? opts.deltaMode : 0;
+      if (mode === 1) delta *= 24;
+      else if (mode === 2) delta *= 400;
+      delta *= WHEEL_DAMP;
+    } else if (opts.fromTouch) {
+      delta *= TOUCH_DAMP;
+    }
     if (scrollOffsetPx <= 0 && delta < 0 && data.length > 1) {
-      e.preventDefault();
       setScrollOffset(maxScroll);
       runTransition((currentIndex - 1 + data.length) % data.length, null, true);
       return;
     }
     if (scrollOffsetPx >= maxScroll - 2 && delta > 0 && data.length > 1) {
-      e.preventDefault();
       setScrollOffset(0);
       runTransition((currentIndex + 1) % data.length, null, true);
       return;
     }
-    e.preventDefault();
     setScrollOffset(scrollOffsetPx + delta);
     if (scrollEndTimer) clearTimeout(scrollEndTimer);
     scrollEndTimer = setTimeout(onScrollEnd, SCROLL_END_DELAY);
@@ -240,6 +259,39 @@
       rafScheduled = true;
       requestAnimationFrame(checkTriggerAndTransition);
     }
+  }
+
+  function onWheel(e) {
+    if (e.cancelable) e.preventDefault();
+    applyScrollDelta(e.deltaY, { fromWheel: true, deltaMode: e.deltaMode });
+  }
+
+  function onTouchStart(e) {
+    if (e.touches.length !== 1) return;
+    touchLastY = e.touches[0].clientY;
+    if (scrollEndTimer) clearTimeout(scrollEndTimer);
+  }
+
+  function onTouchMove(e) {
+    if (touchLastY == null || e.touches.length !== 1) return;
+    var y = e.touches[0].clientY;
+    var dy = touchLastY - y;
+    touchLastY = y;
+    if (e.cancelable) e.preventDefault();
+    if (touchScrollRaf) cancelAnimationFrame(touchScrollRaf);
+    touchScrollRaf = requestAnimationFrame(function () {
+      touchScrollRaf = null;
+      applyScrollDelta(dy, { fromTouch: true });
+    });
+  }
+
+  function onTouchEnd() {
+    touchLastY = null;
+    if (touchScrollRaf) {
+      cancelAnimationFrame(touchScrollRaf);
+      touchScrollRaf = null;
+    }
+    scrollEndTimer = setTimeout(onScrollEnd, SCROLL_END_DELAY);
   }
 
   function createClone(src, rect) {
@@ -254,6 +306,7 @@
     img.style.width = "100%";
     img.style.height = "100%";
     img.style.display = "block";
+    img.decoding = "async";
     wrap.appendChild(img);
     return wrap;
   }
@@ -321,8 +374,8 @@
 
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          cloneOut.style.transition = "transform " + transitionDuration + "ms " + linearEase;
-          cloneIn.style.transition = "transform " + transitionDuration + "ms " + linearEase;
+          cloneOut.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
+          cloneIn.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
           var scaleOutX = fromRect.w / mainRect.w;
           var scaleOutY = fromRect.h / mainRect.h;
           cloneOut.style.transform =
@@ -364,7 +417,8 @@
         setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
         if (mainImage.complete) updateLandscapeClass();
         else { setTimeout(updateLandscapeClass, 100); setTimeout(updateLandscapeClass, 400); }
-        if (!fromWheel) snapScrollToIndex(nextIndex);
+        /* 滚轮/触摸切换后必须对齐列表，否则 offset 仍跨多格会连续跳张 */
+        snapScrollToIndex(nextIndex);
         isAnimating = false;
         if (callback) callback();
       }, transitionDuration);
@@ -406,6 +460,13 @@
     document.addEventListener("wheel", onWheel, { passive: false });
     document.addEventListener("keydown", onKeyDown);
     window.addEventListener("resize", onResize);
+    var scrollHost = document.querySelector(".works-page");
+    if (scrollHost) {
+      scrollHost.addEventListener("touchstart", onTouchStart, { passive: true });
+      scrollHost.addEventListener("touchmove", onTouchMove, { passive: false });
+      scrollHost.addEventListener("touchend", onTouchEnd, { passive: true });
+      scrollHost.addEventListener("touchcancel", onTouchEnd, { passive: true });
+    }
   }
 
   init();

@@ -2,8 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Yi — 摄影作品集</title>
+  <!-- 首张主图预加载：须与 js/data.js 按拼音排序后的第一项 src 一致（当前为「一舟 Nikon」） -->
+  <link rel="preload" as="image" href="photos/摄影作品/一舟 Nikon.jpg" fetchpriority="high">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&display=swap" rel="stylesheet">
@@ -32,7 +34,7 @@
     </div>
     <div class="main-image-zone">
       <div class="main-image-wrap" id="mainImageWrap">
-        <img class="main-image" id="mainImage" src="" alt="" />
+        <img class="main-image" id="mainImage" src="" alt="" fetchpriority="high" decoding="async" />
       </div>
     </div>
   </main>

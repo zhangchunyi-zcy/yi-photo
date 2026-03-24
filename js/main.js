@@ -283,14 +283,15 @@
   }
 
   /**
-   * 原图：先在叠层 img 解码并盖住底图，再写入底图并 decode，最后清空叠层。
-   * 单张 img 直接换 src 时浏览器会先清空再绘新图，即使用 decode() 仍可能闪白；双缓冲可避免。
-   * options.capIdx / guard：同上。
+   * 原图显示：若有 thumbSrc，底图先保持压缩图（无缝底），叠层解码原图后盖在上面再同步底图并撤叠层，避免露白。
+   * options.thumbSrc：与 src 不同时启用「压缩垫底 → 原图叠上」；过渡动画可立即播，不等待原图。
    */
   function applyMainImageFullSrc(src, options) {
     options = options || {};
     var capIdx = options.capIdx;
     var guard = options.guard;
+    var thumbSrc = options.thumbSrc;
+    var hasThumbUnderlay = thumbSrc && thumbSrc !== src;
     if (guard && !guard()) return;
     if (capIdx != null && currentIndex !== capIdx) return;
 
@@ -320,6 +321,10 @@
     if (!mainImageOverlay) {
       fallbackSingleImg();
       return;
+    }
+
+    if (hasThumbUnderlay && mainImage.getAttribute("src") !== thumbSrc) {
+      mainImage.src = thumbSrc;
     }
 
     mainImageOverlay.alt = "";
@@ -391,39 +396,35 @@
 
     prefetchThumbsAround(index);
 
-    /* 主图只用原图，避免与列表压缩图裁切/构图不一致；列表仍用 thumb 省带宽 */
+    /* 主图先显示压缩图垫底，再在叠层无缝叠原图（避免空窗白闪）；无 thumb 时仅拉原图 */
     var capIdx = index;
     mainImage.onerror = null;
-    if (mainImageWrap) {
-      mainImageWrap.classList.remove("is-main-pending");
-      mainImageWrap.classList.add("is-main-pending");
-    }
-
     function clearMainPending() {
       if (mainImageWrap) mainImageWrap.classList.remove("is-main-pending");
     }
-
-    var preloadFull = new Image();
-    var mainFullKick = false;
-    function kickMainFull() {
-      if (mainFullKick) return;
-      mainFullKick = true;
-      if (currentIndex !== capIdx) {
-        clearMainPending();
-        return;
+    if (!item.thumb) {
+      if (mainImageWrap) {
+        mainImageWrap.classList.remove("is-main-pending");
+        mainImageWrap.classList.add("is-main-pending");
       }
       applyMainImageFullSrc(item.src, {
         capIdx: capIdx,
         onDone: clearMainPending,
       });
-    }
-    preloadFull.onload = kickMainFull;
-    preloadFull.onerror = function () {
-      kickMainFull();
-    };
-    preloadFull.src = item.src;
-    if (preloadFull.complete && preloadFull.naturalWidth > 0) {
-      kickMainFull();
+    } else {
+      clearMainPending();
+      mainImage.src = item.thumb;
+      mainImage.onerror = function () {
+        mainImage.onerror = null;
+        applyMainImageFullSrc(item.src, { capIdx: capIdx });
+      };
+      if (mainImage.complete) updateLandscapeClass();
+      else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
+      applyMainImageFullSrc(item.src, {
+        capIdx: capIdx,
+        thumbSrc: item.thumb,
+        onDone: clearMainPending,
+      });
     }
   }
 
@@ -635,22 +636,16 @@
     var fullImg = new Image();
     fullImg.src = nextSrc;
 
-    function beginFlipTransition() {
-      if (thisTransitionId !== activeTransitionId) return;
-
-      var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
-      var natW = 0;
-      var natH = 0;
-      if (fullImg.naturalWidth > 0) {
-        natW = fullImg.naturalWidth;
-        natH = fullImg.naturalHeight;
-      } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
-        natW = thumbImgEl.naturalWidth;
-        natH = thumbImgEl.naturalHeight;
-      }
-
-      /* 原图已就绪时用原图做入场克隆，避免「压缩飞入 → 主区再变高清」的跳变与闪感 */
-      var cloneInSrc = fullImg.naturalWidth > 0 ? nextSrc : nextThumbSrc;
+    var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
+    var natW = 0;
+    var natH = 0;
+    if (fullImg.complete && fullImg.naturalWidth > 0) {
+      natW = fullImg.naturalWidth;
+      natH = fullImg.naturalHeight;
+    } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
+      natW = thumbImgEl.naturalWidth;
+      natH = thumbImgEl.naturalHeight;
+    }
 
     while (transitionLayer.firstChild) {
       transitionLayer.removeChild(transitionLayer.firstChild);
@@ -687,7 +682,7 @@
 
     /* 入场必须与原先一致：克隆层在缩略槽位置且内容填满槽，再 transform 到主图区；
        勿把大图绝对定位到主图区（与左侧裁切框不重叠时会完全看不见）。 */
-    var cloneIn = createClone(cloneInSrc, nextThumbRect);
+    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
     cloneIn.style.zIndex = "2";
     cloneIn.style.willChange = "transform";
     transitionLayer.appendChild(cloneOut);
@@ -743,6 +738,7 @@
       resetMainImageOverlay();
       mainImage.onerror = null;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
+      mainImage.src = nextThumbSrc;
       mainImage.onerror = function () {
         mainImage.onerror = null;
         applyMainImageFullSrc(nextSrc, {
@@ -750,6 +746,7 @@
             return activeTransitionId === capturedId;
           },
           onDone: finishReveal,
+          thumbSrc: nextThumbSrc,
         });
       };
 
@@ -780,6 +777,7 @@
             return activeTransitionId === capturedId;
           },
           onDone: finishReveal,
+          thumbSrc: nextThumbSrc,
         });
       }
 
@@ -793,20 +791,6 @@
         };
       }
     }, transitionDuration);
-    }
-
-    if (fullImg.complete && fullImg.naturalWidth > 0) {
-      beginFlipTransition();
-    } else {
-      fullImg.onload = function () {
-        if (thisTransitionId !== activeTransitionId) return;
-        beginFlipTransition();
-      };
-      fullImg.onerror = function () {
-        if (thisTransitionId !== activeTransitionId) return;
-        beginFlipTransition();
-      };
-    }
   }
 
   function onThumbClick(e) {

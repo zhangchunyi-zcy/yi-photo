@@ -4,11 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Yi — 摄影作品集</title>
-  <!-- 首张主图预加载：须与 js/data.js 按拼音排序后的第一项 src 一致（当前为「一舟 Nikon」） -->
-  <link rel="preload" as="image" href="photos/摄影作品/一舟 Nikon.jpg" fetchpriority="high">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&display=swap" rel="stylesheet">
+  <!-- 首张主图预加载：拼音排序后第一项为「捕梦网Ⅰ Contax G1」 -->
+  <link rel="preload" as="image" href="photos/摄影作品/捕梦网Ⅰ Contax G1.JPG" fetchpriority="high">
+  <!-- 首屏缩略图预加载（排序后第1张） -->
+  <link rel="preload" as="image" href="photos/thumbs/捕梦网Ⅰ Contax G1.JPG" fetchpriority="high">
+  <!--
+    Google Fonts 在中国大陆常被屏蔽，改用国内镜像 loli.net；
+    若镜像也不可用，浏览器会自动降级到系统字体（-apple-system / BlinkMacSystemFont）。
+  -->
+  <link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+  <link href="https://fonts.loli.net/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body class="works-body">

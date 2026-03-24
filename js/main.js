@@ -271,6 +271,17 @@
     });
   }
 
+  /** Chrome：在下一帧真正绘制到屏幕后再回调，比单纯 rAF 更贴近「已上屏」 */
+  function whenPaintedOnScreen(el, cb) {
+    if (el && typeof el.requestVideoFrameCallback === "function") {
+      el.requestVideoFrameCallback(function () {
+        cb();
+      });
+    } else {
+      afterPaintFrames(cb, 5);
+    }
+  }
+
   /**
    * 原图：先在叠层 img 解码并盖住底图，再写入底图并 decode，最后清空叠层。
    * 单张 img 直接换 src 时浏览器会先清空再绘新图，即使用 decode() 仍可能闪白；双缓冲可避免。
@@ -328,7 +339,7 @@
         finish();
       }
       function scheduleHideWhenBasePainted() {
-        afterPaintFrames(hideOverlay, 3);
+        whenPaintedOnScreen(mainImage, hideOverlay);
       }
       if (typeof mainImage.decode === "function") {
         mainImage.decode().then(scheduleHideWhenBasePainted).catch(scheduleHideWhenBasePainted);
@@ -584,7 +595,7 @@
     img.style.display = "block";
     img.style.objectFit = "contain";
     img.style.objectPosition = "left top";
-    img.decoding = "async";
+    img.decoding = "sync";
     wrap.appendChild(img);
     return wrap;
   }
@@ -624,16 +635,22 @@
     var fullImg = new Image();
     fullImg.src = nextSrc;
 
-    var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
-    var natW = 0;
-    var natH = 0;
-    if (fullImg.complete && fullImg.naturalWidth > 0) {
-      natW = fullImg.naturalWidth;
-      natH = fullImg.naturalHeight;
-    } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
-      natW = thumbImgEl.naturalWidth;
-      natH = thumbImgEl.naturalHeight;
-    }
+    function beginFlipTransition() {
+      if (thisTransitionId !== activeTransitionId) return;
+
+      var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
+      var natW = 0;
+      var natH = 0;
+      if (fullImg.naturalWidth > 0) {
+        natW = fullImg.naturalWidth;
+        natH = fullImg.naturalHeight;
+      } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
+        natW = thumbImgEl.naturalWidth;
+        natH = thumbImgEl.naturalHeight;
+      }
+
+      /* 原图已就绪时用原图做入场克隆，避免「压缩飞入 → 主区再变高清」的跳变与闪感 */
+      var cloneInSrc = fullImg.naturalWidth > 0 ? nextSrc : nextThumbSrc;
 
     while (transitionLayer.firstChild) {
       transitionLayer.removeChild(transitionLayer.firstChild);
@@ -670,7 +687,7 @@
 
     /* 入场必须与原先一致：克隆层在缩略槽位置且内容填满槽，再 transform 到主图区；
        勿把大图绝对定位到主图区（与左侧裁切框不重叠时会完全看不见）。 */
-    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
+    var cloneIn = createClone(cloneInSrc, nextThumbRect);
     cloneIn.style.zIndex = "2";
     cloneIn.style.willChange = "transform";
     transitionLayer.appendChild(cloneOut);
@@ -776,6 +793,20 @@
         };
       }
     }, transitionDuration);
+    }
+
+    if (fullImg.complete && fullImg.naturalWidth > 0) {
+      beginFlipTransition();
+    } else {
+      fullImg.onload = function () {
+        if (thisTransitionId !== activeTransitionId) return;
+        beginFlipTransition();
+      };
+      fullImg.onerror = function () {
+        if (thisTransitionId !== activeTransitionId) return;
+        beginFlipTransition();
+      };
+    }
   }
 
   function onThumbClick(e) {

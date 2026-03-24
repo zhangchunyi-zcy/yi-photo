@@ -378,6 +378,43 @@
     return wrap;
   }
 
+  /**
+   * 入场动画：缩略槽只做裁切窗口；内部 img 按主图区 contain 尺寸布局解码，
+   * 避免「先画在槽宽 100%（约几十 px）再 scale」导致严重马赛克/似乱码。
+   */
+  function createCloneInHiRes(src, thumbRect, endRect, fallbackSrc) {
+    var wrap = document.createElement("div");
+    wrap.className = "clone clone-in-hires";
+    wrap.style.cssText =
+      "left:" +
+      thumbRect.x +
+      "px;top:" +
+      thumbRect.y +
+      "px;width:" +
+      thumbRect.w +
+      "px;height:" +
+      thumbRect.h +
+      "px;transform-origin:0 0;overflow:hidden;";
+    var img = document.createElement("img");
+    img.src = src;
+    img.style.position = "absolute";
+    img.style.left = endRect.x - thumbRect.x + "px";
+    img.style.top = endRect.y - thumbRect.y + "px";
+    img.style.width = endRect.w + "px";
+    img.style.height = endRect.h + "px";
+    img.style.objectFit = "contain";
+    img.style.display = "block";
+    img.decoding = "async";
+    if (fallbackSrc && fallbackSrc !== src) {
+      img.onerror = function () {
+        img.onerror = null;
+        img.src = fallbackSrc;
+      };
+    }
+    wrap.appendChild(img);
+    return wrap;
+  }
+
   function runTransition(nextIndex, callback, fromWheel) {
     if (nextIndex === currentIndex || isAnimating || !data[nextIndex]) return;
     if (!fromWheel) pendingTargetIndex = null;
@@ -407,14 +444,20 @@
     var nextThumbSrc = data[nextIndex].thumb || nextSrc;
     var thisTransitionId = ++activeTransitionId;
 
-    /* 后台预加载原图（不阻塞动画） */
+    /* 后台预加载原图（与动画并行；已缓存则立即可用） */
     var fullImg = new Image();
     fullImg.src = nextSrc;
 
-    /* 从缩略图 DOM 元素取尺寸（已加载，立即可用） */
     var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
-    var natW = thumbImgEl ? thumbImgEl.naturalWidth : 0;
-    var natH = thumbImgEl ? thumbImgEl.naturalHeight : 0;
+    var natW = 0;
+    var natH = 0;
+    if (fullImg.complete && fullImg.naturalWidth > 0) {
+      natW = fullImg.naturalWidth;
+      natH = fullImg.naturalHeight;
+    } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
+      natW = thumbImgEl.naturalWidth;
+      natH = thumbImgEl.naturalHeight;
+    }
 
     /* ---- 清理上次残留克隆，立即启动新动画 ---- */
     while (transitionLayer.firstChild) {
@@ -439,11 +482,13 @@
     var outT = uniformFlipTransform(mainImgRect, fromThumbRect);
     var inT = uniformFlipTransform(nextThumbRect, endMainRect);
 
-    /* cloneOut 用当前主图（已加载）；cloneIn 用缩略图（小图，即时显示） */
+    /* cloneOut：当前主图区域（大图解码）；cloneIn：槽内裁切 + 主图区尺寸解码，避免马赛克 */
     var cloneOut = createClone(data[prevIndex].src, mainImgRect);
     cloneOut.style.zIndex = "1";
     cloneOut.style.willChange = "transform";
-    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
+    var cloneInSrc =
+      fullImg.complete && fullImg.naturalWidth > 0 ? nextSrc : nextThumbSrc;
+    var cloneIn = createCloneInHiRes(cloneInSrc, nextThumbRect, endMainRect, nextThumbSrc);
     cloneIn.style.zIndex = "2";
     cloneIn.style.willChange = "transform";
     transitionLayer.appendChild(cloneOut);

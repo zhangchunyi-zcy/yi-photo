@@ -5,7 +5,7 @@
    * Pablo Escudero 式底层逻辑：
    * 1. 列表由 transform: translateY(-scrollOffsetPx) 驱动，不用原生 scroll，避免回流与抽动
    * 2. 当前项仅 opacity:0 标记，不改变尺寸，避免 collapse 导致的布局跳动
-   * 3. 当前索引由 scrollOffset 唯一推导；滑动结束做一次 snap，不反复补偿
+   * 3. 当前索引由 scrollOffset 推导；可滚动时用线性分段；短列表用触发线吸附
    */
 
   var data = window.PHOTOS_DATA || [];
@@ -187,25 +187,46 @@
   }
 
   /**
-   * 与 snapToNearestItem 一致：取「触发线」在列表内容坐标中最接近哪一项的中心。
-   * 旧逻辑用「落在 [top,bottom)」在滑到底部时易落在空隙或仍指向倒数第二张，导致最后几张无法切到大图。
+   * 主图索引：滑到底部时 maxScroll 往往不足以让最后几张的中心对齐固定触发线，
+   * 仅用「距触发线最近」永远选不中最后几张。改为按滚动进度把 [0,maxScroll] 均分为 n 段，
+   * 与滑动距离一一对应到每张（最后一段含第 n 张）。
+   * 列表总高度不足一屏（maxScroll<=0）时仍用触发线最近中心。
    */
   function getIndexFromScrollOffset() {
     if (!itemTops.length || !thumbListEl) return 0;
-    var triggerY = getTriggerY();
-    var listRect = thumbListEl.getBoundingClientRect();
-    var triggerInList = scrollOffsetPx + (triggerY - listRect.top);
-    var bestIdx = 0;
-    var bestDist = Infinity;
-    for (var i = 0; i < itemTops.length; i++) {
-      var center = itemTops[i] + itemHeights[i] / 2;
-      var dist = Math.abs(center - triggerInList);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = i;
+    var n = itemTops.length;
+    if (n <= 1) return 0;
+    if (maxScroll <= 0) {
+      var triggerY = getTriggerY();
+      var listRect = thumbListEl.getBoundingClientRect();
+      var triggerInList = scrollOffsetPx + (triggerY - listRect.top);
+      var bestIdx = 0;
+      var bestDist = Infinity;
+      for (var j = 0; j < n; j++) {
+        var center = itemTops[j] + itemHeights[j] / 2;
+        var dist = Math.abs(center - triggerInList);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = j;
+        }
       }
+      return bestIdx;
     }
-    return bestIdx;
+    var t = scrollOffsetPx / maxScroll;
+    if (t <= 0) return 0;
+    if (t >= 1 || scrollOffsetPx >= maxScroll - 1) return n - 1;
+    var idx = Math.floor(t * n);
+    if (idx >= n) idx = n - 1;
+    return idx;
+  }
+
+  /** 与 getIndexFromScrollOffset 互逆：可滚动时把第 index 张对应到该段中点（末张用 maxScroll，避免 snap 拉回） */
+  function scrollOffsetForLinearIndex(index) {
+    var n = itemTops.length;
+    if (n <= 1 || maxScroll <= 0) return null;
+    if (index <= 0) return 0;
+    if (index >= n - 1) return maxScroll;
+    return ((index + 0.5) / n) * maxScroll;
   }
 
   function updateCurrentClass() {
@@ -240,7 +261,11 @@
     setLandscapeFromIndex(index);
     mainImage.alt = item.caption || "作品 " + (index + 1);
     setCaptionTwoLines(item.caption || "", captionLine1, captionLine2);
-    if (!noScroll) snapScrollToIndex(index);
+    if (!noScroll) {
+      var linearOff = scrollOffsetForLinearIndex(index);
+      if (linearOff !== null) setScrollOffset(linearOff);
+      else snapScrollToIndex(index);
+    }
 
     prefetchThumbsAround(index);
 
@@ -331,24 +356,17 @@
     };
   }
 
-  /** 滑动结束：将最接近触发线中心的非当前项对齐到中心 */
+  /**
+   * 滑动结束：与 getIndexFromScrollOffset 同一套索引。
+   * 列表可滚动时（maxScroll>0）不再 snap 居中：snapScrollToIndex 会把 scroll 从 maxScroll 拉回，
+   * 线性映射 t 变小，末几张大图会错误退回；保留手指停下的 scroll 即可。
+   * 仅列表不足一屏时仍吸附到触发线，与短列表分支一致。
+   */
   function snapToNearestItem() {
     if (isAnimating || Date.now() < transitionLockUntil) return;
     transitionLockUntil = Date.now() + SNAP_LOCK_MS;
-    var triggerY = getTriggerY();
-    var listRect = thumbListEl.getBoundingClientRect();
-    var triggerInList = scrollOffsetPx + (triggerY - listRect.top);
-    var bestIdx = 0;
-    var bestDist = Infinity;
-    for (var i = 0; i < itemTops.length; i++) {
-      var center = itemTops[i] + itemHeights[i] / 2;
-      var dist = Math.abs(center - triggerInList);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = i;
-      }
-    }
-    snapScrollToIndex(bestIdx);
+    var bestIdx = getIndexFromScrollOffset();
+    if (maxScroll <= 0) snapScrollToIndex(bestIdx);
     prefetchThumbsAround(bestIdx);
   }
 
@@ -583,7 +601,14 @@
       updateCurrentClass();
       setLandscapeFromIndex(nextIndex);
       setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
-      snapScrollToIndex(nextIndex);
+      if (maxScroll > 0) {
+        if (!fromWheel) {
+          var offDone = scrollOffsetForLinearIndex(nextIndex);
+          if (offDone !== null) setScrollOffset(offDone);
+        }
+      } else {
+        snapScrollToIndex(nextIndex);
+      }
 
       mainImage.onerror = null;
       mainImage.src = nextThumbSrc;

@@ -1,0 +1,10 @@
+---
+description: 代码修改后必须 git commit（并 push 到 origin）
+alwaysApply: true
+---
+
+# Git 提交约定
+
+- 在本仓库中完成任何有意义的代码或资源修改后，**在同一会话内**执行：`git add` 相关文件 → `git commit -m "..."`（说明用完整短句，中文可）。
+- 若用户已配置远程且此前习惯同步线上，在提交后执行 **`git push origin main`**（或当前分支）。
+- 不要只改文件不提交就结束任务；若无法提交（例如无权限），说明原因。

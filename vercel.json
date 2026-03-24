@@ -2,16 +2,7 @@
   "framework": null,
   "headers": [
     {
-      "source": "/photos/thumbs/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, stale-while-revalidate=86400"
-        }
-      ]
-    },
-    {
-      "source": "/photos/摄影作品/(.*)",
+      "source": "/photos/(.*)",
       "headers": [
         {
           "key": "Cache-Control",

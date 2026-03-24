@@ -85,16 +85,18 @@
       wrap.className = "thumb-item" + (i === currentIndex ? " is-current" : "");
       wrap.setAttribute("data-index", String(i));
       var img = document.createElement("img");
-      /* 列表用压缩缩略图；虚拟滚动（transform）下 lazy 不可靠，全部 eager */
       img.src = item.thumb || item.src;
       img.alt = item.caption || "作品 " + (i + 1);
+      /* 虚拟滚动用 transform，lazy 不可靠；列表用压缩图体积小 */
       img.loading = "eager";
       img.decoding = "async";
-      /* 缩略图加载失败时降级到原图 */
       if (item.thumb) {
-        img.onerror = (function(src) {
-          return function() { this.onerror = null; this.src = src; };
-        }(item.src));
+        img.onerror = (function (fullSrc) {
+          return function () {
+            this.onerror = null;
+            this.src = fullSrc;
+          };
+        })(item.src);
       }
       img.addEventListener("load", function (idx) {
         return function () { if (idx === currentIndex) setLandscapeFromIndex(idx); };
@@ -171,7 +173,11 @@
       renderThumbnails();
     }
     setLandscapeFromIndex(index);
-    /* 首张图：先用压缩图快速显示，失败则降级到原图 */
+    mainImage.alt = item.caption || "作品 " + (index + 1);
+    setCaptionTwoLines(item.caption || "", captionLine1, captionLine2);
+    if (!noScroll) snapScrollToIndex(index);
+
+    /* 首屏先显示压缩图，原图后台解码后无缝替换 */
     mainImage.onerror = null;
     if (item.thumb) {
       mainImage.src = item.thumb;
@@ -183,11 +189,18 @@
     } else {
       mainImage.src = item.src;
     }
-    mainImage.alt = item.caption || "作品 " + (index + 1);
-    setCaptionTwoLines(item.caption || "", captionLine1, captionLine2);
-    if (!noScroll) snapScrollToIndex(index);
+    var preloadFull = new Image();
+    var capIdx = index;
+    preloadFull.onload = function () {
+      if (currentIndex === capIdx) {
+        mainImage.src = item.src;
+        updateLandscapeClass();
+      }
+    };
+    preloadFull.src = item.src;
+
     if (mainImage.complete) updateLandscapeClass();
-    else { setTimeout(updateLandscapeClass, 100); setTimeout(updateLandscapeClass, 400); }
+    else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
   }
 
   /** 将列表滚动到使指定索引的项居中于触发线（与 getIndexFromScrollOffset 同一坐标系） */
@@ -379,8 +392,7 @@
   }
 
   /**
-   * 入场动画：缩略槽只做裁切窗口；内部 img 按主图区 contain 尺寸布局解码，
-   * 避免「先画在槽宽 100%（约几十 px）再 scale」导致严重马赛克/似乱码。
+   * 入场克隆：缩略槽裁切 + 主图区尺寸解码，避免小槽 100% 再 scale 导致马赛克。
    */
   function createCloneInHiRes(src, thumbRect, endRect, fallbackSrc) {
     var wrap = document.createElement("div");
@@ -444,7 +456,6 @@
     var nextThumbSrc = data[nextIndex].thumb || nextSrc;
     var thisTransitionId = ++activeTransitionId;
 
-    /* 后台预加载原图（与动画并行；已缓存则立即可用） */
     var fullImg = new Image();
     fullImg.src = nextSrc;
 
@@ -459,10 +470,10 @@
       natH = thumbImgEl.naturalHeight;
     }
 
-    /* ---- 清理上次残留克隆，立即启动新动画 ---- */
     while (transitionLayer.firstChild) {
       transitionLayer.removeChild(transitionLayer.firstChild);
     }
+
     var mainImgRect = getRect(mainImage);
     setLandscapeFromIndex(nextIndex);
     var wrapRect = getRect(mainImageWrap);
@@ -470,7 +481,9 @@
     var endMainRect = null;
     if (natW > 0 && natH > 0) {
       endMainRect = getContainRectInWrap(
-        natW, natH, wrapRect,
+        natW,
+        natH,
+        wrapRect,
         mainImageWrap.classList.contains("is-landscape"),
         isMobile
       );
@@ -482,10 +495,14 @@
     var outT = uniformFlipTransform(mainImgRect, fromThumbRect);
     var inT = uniformFlipTransform(nextThumbRect, endMainRect);
 
-    /* cloneOut：当前主图区域（大图解码）；cloneIn：槽内裁切 + 主图区尺寸解码，避免马赛克 */
-    var cloneOut = createClone(data[prevIndex].src, mainImgRect);
+    var outSrc =
+      mainImage.getAttribute("src") ||
+      data[prevIndex].thumb ||
+      data[prevIndex].src;
+    var cloneOut = createClone(outSrc, mainImgRect);
     cloneOut.style.zIndex = "1";
     cloneOut.style.willChange = "transform";
+
     var cloneInSrc =
       fullImg.complete && fullImg.naturalWidth > 0 ? nextSrc : nextThumbSrc;
     var cloneIn = createCloneInHiRes(cloneInSrc, nextThumbRect, endMainRect, nextThumbSrc);
@@ -526,7 +543,6 @@
       setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
       snapScrollToIndex(nextIndex);
 
-      /* 先用压缩图占位；加载失败时立即降级到原图，避免破图 */
       mainImage.onerror = null;
       mainImage.src = nextThumbSrc;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
@@ -535,6 +551,20 @@
         mainImage.src = nextSrc;
         updateLandscapeClass();
       };
+
+      var capturedId = thisTransitionId;
+      function upgradeToFull() {
+        if (activeTransitionId !== capturedId) return;
+        mainImage.src = nextSrc;
+        updateLandscapeClass();
+      }
+      if (fullImg.complete && fullImg.naturalWidth > 0) {
+        upgradeToFull();
+      } else {
+        fullImg.onload = upgradeToFull;
+        fullImg.onerror = function () {};
+      }
+
       if (mainImage.complete) updateLandscapeClass();
       else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
 
@@ -546,23 +576,10 @@
           isAnimating = false;
           var flush = pendingTargetIndex;
           pendingTargetIndex = null;
-
-          /* 后台静默换成原图（已在 fullImg 预加载） */
-          var capturedId = thisTransitionId;
-          function upgradeToFull() {
-            if (activeTransitionId !== capturedId) return;
-            mainImage.src = nextSrc;
-            updateLandscapeClass();
-          }
-          if (fullImg.complete && fullImg.naturalWidth > 0) {
-            upgradeToFull();
-          } else {
-            fullImg.onload = upgradeToFull;
-            fullImg.onerror = function () {};
-          }
-
           if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
-            requestAnimationFrame(function () { runTransition(flush, callback, true); });
+            requestAnimationFrame(function () {
+              runTransition(flush, callback, true);
+            });
           } else if (callback) {
             callback();
           }

@@ -298,7 +298,6 @@ img {
   pointer-events: none;
 }
 
-/* 入场克隆：大图解码尺寸，避免小槽 100% 栅格化再 scale 导致马赛克 */
 .transition-layer .clone.clone-in-hires > img {
   width: auto;
   height: auto;

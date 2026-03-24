@@ -387,115 +387,116 @@
     }
 
     var nextSrc = data[nextIndex].src;
-    var nextImg = new Image();
-    var startAnimOnce = false;
+    var nextThumbSrc = data[nextIndex].thumb || nextSrc;
     var thisTransitionId = ++activeTransitionId;
 
-    function startAnim() {
-      if (startAnimOnce) return;
-      startAnimOnce = true;
-      while (transitionLayer.firstChild) {
-        transitionLayer.removeChild(transitionLayer.firstChild);
-      }
-      var mainImgRect = getRect(mainImage);
+    /* 后台预加载原图（不阻塞动画） */
+    var fullImg = new Image();
+    fullImg.src = nextSrc;
+
+    /* 从缩略图 DOM 元素取尺寸（已加载，立即可用） */
+    var thumbImgEl = thumbListInner.querySelector('.thumb-item[data-index="' + nextIndex + '"] img');
+    var natW = thumbImgEl ? thumbImgEl.naturalWidth : 0;
+    var natH = thumbImgEl ? thumbImgEl.naturalHeight : 0;
+
+    /* ---- 立即启动动画，不等原图 ---- */
+    while (transitionLayer.firstChild) {
+      transitionLayer.removeChild(transitionLayer.firstChild);
+    }
+    var mainImgRect = getRect(mainImage);
+    setLandscapeFromIndex(nextIndex);
+    var wrapRect = getRect(mainImageWrap);
+    var isMobile = window.matchMedia("(max-width: 900px)").matches;
+    var endMainRect = null;
+    if (natW > 0 && natH > 0) {
+      endMainRect = getContainRectInWrap(
+        natW, natH, wrapRect,
+        mainImageWrap.classList.contains("is-landscape"),
+        isMobile
+      );
+    }
+    if (!endMainRect) {
+      endMainRect = { x: wrapRect.x, y: wrapRect.y, w: wrapRect.w, h: wrapRect.h };
+    }
+
+    var outT = uniformFlipTransform(mainImgRect, fromThumbRect);
+    var inT = uniformFlipTransform(nextThumbRect, endMainRect);
+
+    /* cloneOut 用当前主图（已加载）；cloneIn 用缩略图（小图，即时显示） */
+    var cloneOut = createClone(data[prevIndex].src, mainImgRect);
+    cloneOut.style.zIndex = "1";
+    cloneOut.style.willChange = "transform";
+    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
+    cloneIn.style.zIndex = "2";
+    cloneIn.style.willChange = "transform";
+    transitionLayer.appendChild(cloneOut);
+    transitionLayer.appendChild(cloneIn);
+
+    mainImage.style.visibility = "hidden";
+    mainImage.style.opacity = "0";
+    mainImage.setAttribute("data-transitioning", "1");
+    cloneOut.style.transition = "none";
+    cloneIn.style.transition = "none";
+    cloneOut.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
+    cloneIn.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
+
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        cloneOut.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
+        cloneIn.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
+        cloneOut.style.transform =
+          "translate3d(" + outT.dx + "px," + outT.dy + "px,0) scale3d(" + outT.s + "," + outT.s + ",1)";
+        cloneIn.style.transform =
+          "translate3d(" + inT.dx + "px," + inT.dy + "px,0) scale3d(" + inT.s + "," + inT.s + ",1)";
+      });
+    });
+
+    setTimeout(function () {
+      if (thisTransitionId !== activeTransitionId) return;
+      cloneOut.style.willChange = "";
+      cloneIn.style.willChange = "";
+      if (cloneOut.parentNode === transitionLayer) transitionLayer.removeChild(cloneOut);
+      if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
+
+      currentIndex = nextIndex;
+      updateCurrentClass();
       setLandscapeFromIndex(nextIndex);
-      var wrapRect = getRect(mainImageWrap);
-      var isMobile = window.matchMedia("(max-width: 900px)").matches;
-      var endMainRect;
-      if (nextImg.naturalWidth > 0 && nextImg.naturalHeight > 0) {
-        endMainRect = getContainRectInWrap(
-          nextImg.naturalWidth,
-          nextImg.naturalHeight,
-          wrapRect,
-          mainImageWrap.classList.contains("is-landscape"),
-          isMobile
-        );
+      setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
+      snapScrollToIndex(nextIndex);
+
+      /* 原图已下载完：直接用高清；否则先用缩略图占位，下载完后无缝换上 */
+      if (fullImg.complete && fullImg.naturalWidth > 0) {
+        mainImage.src = nextSrc;
+        updateLandscapeClass();
+      } else {
+        mainImage.src = nextThumbSrc;
+        fullImg.onload = function () {
+          if (currentIndex === nextIndex && thisTransitionId === activeTransitionId) {
+            mainImage.src = nextSrc;
+            updateLandscapeClass();
+          }
+        };
       }
-      if (!endMainRect) {
-        endMainRect = mainImgRect;
-      }
-
-      var outT = uniformFlipTransform(mainImgRect, fromThumbRect);
-      var inT = uniformFlipTransform(nextThumbRect, endMainRect);
-
-      var cloneOut = createClone(data[prevIndex].src, mainImgRect);
-      cloneOut.style.zIndex = "1";
-      cloneOut.style.willChange = "transform";
-      var cloneIn = createClone(nextSrc, nextThumbRect);
-      cloneIn.style.zIndex = "2";
-      cloneIn.style.willChange = "transform";
-      transitionLayer.appendChild(cloneOut);
-      transitionLayer.appendChild(cloneIn);
-
-      var imgIn = cloneIn.querySelector("img");
-      if (imgIn && !imgIn.complete) {
-        imgIn.style.opacity = "0";
-        imgIn.addEventListener("load", function onLoad() {
-          imgIn.removeEventListener("load", onLoad);
-          imgIn.style.opacity = "1";
-        });
-      }
-
-      mainImage.style.visibility = "hidden";
-      mainImage.style.opacity = "0";
-      mainImage.setAttribute("data-transitioning", "1");
-      cloneOut.style.transition = "none";
-      cloneIn.style.transition = "none";
-      cloneOut.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
-      cloneIn.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
+      mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
 
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          cloneOut.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
-          cloneIn.style.transition = "transform " + transitionDuration + "ms " + transitionEase;
-          cloneOut.style.transform =
-            "translate3d(" + outT.dx + "px," + outT.dy + "px,0) scale3d(" + outT.s + "," + outT.s + ",1)";
-          cloneIn.style.transform =
-            "translate3d(" + inT.dx + "px," + inT.dy + "px,0) scale3d(" + inT.s + "," + inT.s + ",1)";
+          mainImage.style.visibility = "";
+          mainImage.style.opacity = "";
+          mainImage.removeAttribute("data-transitioning");
+          isAnimating = false;
+          var flush = pendingTargetIndex;
+          pendingTargetIndex = null;
+          if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
+            requestAnimationFrame(function () {
+              runTransition(flush, callback, true);
+            });
+          } else if (callback) {
+            callback();
+          }
         });
       });
-
-      setTimeout(function () {
-        if (thisTransitionId !== activeTransitionId) return;
-        cloneOut.style.willChange = "";
-        cloneIn.style.willChange = "";
-        if (cloneOut.parentNode === transitionLayer) transitionLayer.removeChild(cloneOut);
-        if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
-        currentIndex = nextIndex;
-        updateCurrentClass();
-        setLandscapeFromIndex(nextIndex);
-        mainImage.src = nextSrc;
-        mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
-        setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
-        if (mainImage.complete) updateLandscapeClass();
-        else { setTimeout(updateLandscapeClass, 100); setTimeout(updateLandscapeClass, 400); }
-        snapScrollToIndex(nextIndex);
-        requestAnimationFrame(function () {
-          requestAnimationFrame(function () {
-            mainImage.style.visibility = "";
-            mainImage.style.opacity = "";
-            mainImage.removeAttribute("data-transitioning");
-            isAnimating = false;
-            var flush = pendingTargetIndex;
-            pendingTargetIndex = null;
-            if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
-              requestAnimationFrame(function () {
-                runTransition(flush, callback, true);
-              });
-            } else if (callback) {
-              callback();
-            }
-          });
-        });
-      }, transitionDuration);
-    }
-
-    nextImg.onload = startAnim;
-    nextImg.onerror = startAnim;
-    nextImg.src = nextSrc;
-    if (nextImg.complete) {
-      startAnim();
-    }
+    }, transitionDuration);
   }
 
   function onThumbClick(e) {

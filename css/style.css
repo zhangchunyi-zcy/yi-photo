@@ -235,6 +235,11 @@ img {
   overflow: visible;
 }
 
+/* 首帧原图未就绪时只藏底图，叠层仍可显示解码后的原图，避免全透明闪白 */
+.main-image-wrap.is-main-pending #mainImage {
+  opacity: 0 !important;
+}
+
 /* 竖图：最大高度限制，与文字区域有间距；图片完整显示不裁剪 */
 .main-image {
   width: 100%;
@@ -259,6 +264,7 @@ img {
   z-index: 2;
   opacity: 0;
   pointer-events: none;
+  backface-visibility: hidden;
 }
 
 /* 切换动画期间禁止主图与克隆层叠（避免双影） */

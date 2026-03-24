@@ -50,7 +50,8 @@
   var remeasureThumbTimer = null;
   /** 移动端同时请求过多缩略图会触发连接限制/失败 → 破图；按距当前项由近到远分批赋 src */
   var THUMB_RAF_BATCH = 4;
-  var THUMB_SYNC_FIRST = 3;
+  /** 首屏左侧列表一次同步赋 src 的数量（约一屏 9 张），余下仍按 RAF 分批 */
+  var THUMB_FIRST_SCREEN = 9;
 
   function buildCentrifugalOrder(center, n) {
     var o = [center];
@@ -91,7 +92,7 @@
   function startThumbPump(center) {
     var order = buildCentrifugalOrder(center, data.length);
     var qi = 0;
-    var syncEnd = Math.min(THUMB_SYNC_FIRST, order.length);
+    var syncEnd = Math.min(THUMB_FIRST_SCREEN, order.length);
     for (; qi < syncEnd; qi++) {
       ensureThumbLoaded(order[qi]);
     }
@@ -274,6 +275,7 @@
       if (guard && !guard()) return;
       if (capIdx != null && currentIndex !== capIdx) return;
       updateLandscapeClass();
+      if (options.onDone) options.onDone();
     }
 
     function fallbackSingleImg() {
@@ -363,33 +365,39 @@
 
     prefetchThumbsAround(index);
 
-    /* 首屏先显示压缩图；原图稍后再拉，避免与缩略图首波争抢带宽 */
+    /* 主图只用原图，避免与列表压缩图裁切/构图不一致；列表仍用 thumb 省带宽 */
     var capIdx = index;
     mainImage.onerror = null;
-    if (item.thumb) {
-      mainImage.src = item.thumb;
-      mainImage.onerror = function () {
-        mainImage.onerror = null;
-        applyMainImageFullSrc(item.src, { capIdx: capIdx });
-      };
-      var preloadFull = new Image();
-      preloadFull.onload = function () {
-        if (currentIndex !== capIdx) return;
-        applyMainImageFullSrc(item.src, { capIdx: capIdx });
-      };
-      function kickPreloadFull() {
-        preloadFull.src = item.src;
-      }
-      if (typeof requestIdleCallback === "function") {
-        requestIdleCallback(kickPreloadFull, { timeout: 2000 });
-      } else {
-        setTimeout(kickPreloadFull, 120);
-      }
+    if (mainImageWrap) {
+      mainImageWrap.classList.remove("is-main-pending");
+      mainImageWrap.classList.add("is-main-pending");
+    }
 
-      if (mainImage.complete) updateLandscapeClass();
-      else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
-    } else {
-      applyMainImageFullSrc(item.src, { capIdx: capIdx });
+    function clearMainPending() {
+      if (mainImageWrap) mainImageWrap.classList.remove("is-main-pending");
+    }
+
+    var preloadFull = new Image();
+    var mainFullKick = false;
+    function kickMainFull() {
+      if (mainFullKick) return;
+      mainFullKick = true;
+      if (currentIndex !== capIdx) {
+        clearMainPending();
+        return;
+      }
+      applyMainImageFullSrc(item.src, {
+        capIdx: capIdx,
+        onDone: clearMainPending,
+      });
+    }
+    preloadFull.onload = kickMainFull;
+    preloadFull.onerror = function () {
+      kickMainFull();
+    };
+    preloadFull.src = item.src;
+    if (preloadFull.complete && preloadFull.naturalWidth > 0) {
+      kickMainFull();
     }
   }
 
@@ -684,7 +692,7 @@
       cloneOut.style.willChange = "";
       cloneIn.style.willChange = "";
       if (cloneOut.parentNode === transitionLayer) transitionLayer.removeChild(cloneOut);
-      if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
+      /* 保留 cloneIn 直到主图原图叠层就绪，避免主图区闪白 */
 
       currentIndex = nextIndex;
       updateCurrentClass();
@@ -702,7 +710,6 @@
       var capturedId = thisTransitionId;
       resetMainImageOverlay();
       mainImage.onerror = null;
-      mainImage.src = nextThumbSrc;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
       mainImage.onerror = function () {
         mainImage.onerror = null;
@@ -710,41 +717,49 @@
           guard: function () {
             return activeTransitionId === capturedId;
           },
+          onDone: finishReveal,
         });
       };
+
+      function finishReveal() {
+        if (activeTransitionId !== capturedId) return;
+        if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
+            isAnimating = false;
+            var flush = pendingTargetIndex;
+            pendingTargetIndex = null;
+            if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
+              requestAnimationFrame(function () {
+                runTransition(flush, callback, true);
+              });
+            } else if (callback) {
+              callback();
+            }
+          });
+        });
+      }
+
       function upgradeToFull() {
         if (activeTransitionId !== capturedId) return;
         applyMainImageFullSrc(nextSrc, {
           guard: function () {
             return activeTransitionId === capturedId;
           },
+          onDone: finishReveal,
         });
       }
+
+      fullImg.onload = null;
       if (fullImg.complete && fullImg.naturalWidth > 0) {
         upgradeToFull();
       } else {
         fullImg.onload = upgradeToFull;
-        fullImg.onerror = function () {};
+        fullImg.onerror = function () {
+          upgradeToFull();
+        };
       }
-
-      if (mainImage.complete) updateLandscapeClass();
-      else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
-
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
-          isAnimating = false;
-          var flush = pendingTargetIndex;
-          pendingTargetIndex = null;
-          if (flush !== null && flush !== currentIndex && flush >= 0 && flush < data.length) {
-            requestAnimationFrame(function () {
-              runTransition(flush, callback, true);
-            });
-          } else if (callback) {
-            callback();
-          }
-        });
-      });
     }, transitionDuration);
   }
 

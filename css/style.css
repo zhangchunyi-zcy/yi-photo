@@ -272,11 +272,10 @@ img {
   transform: translateZ(0);
 }
 
-/* 切换动画期间禁止主图与克隆层叠（避免双影） */
+/* 切换动画期间隐藏主图区（仅用 opacity，勿用 visibility:hidden，否则解码层不合成，解除瞬间易闪白） */
 .main-image-wrap[data-transitioning="1"] .main-image,
 .main-image-wrap[data-transitioning="1"] .main-image-overlay {
   opacity: 0 !important;
-  visibility: hidden !important;
   pointer-events: none;
 }
 

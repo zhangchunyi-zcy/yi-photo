@@ -752,10 +752,12 @@
 
       function finishReveal() {
         if (activeTransitionId !== capturedId) return;
-        if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
+        /* 必须先解除主图区隐藏，再撤克隆层。若先删 cloneIn 而 transitioning 仍在，
+           主图 img 仍为 visibility:hidden，会露两帧白底（用户看到的「闪一下」）。 */
+        if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
         requestAnimationFrame(function () {
+          if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
           requestAnimationFrame(function () {
-            if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
             isAnimating = false;
             var flush = pendingTargetIndex;
             pendingTargetIndex = null;

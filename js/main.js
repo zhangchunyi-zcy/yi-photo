@@ -85,11 +85,17 @@
       wrap.className = "thumb-item" + (i === currentIndex ? " is-current" : "");
       wrap.setAttribute("data-index", String(i));
       var img = document.createElement("img");
-      /* 列表用小缩略图（~300px），主图切换时才加载原图 */
+      /* 列表用压缩缩略图；虚拟滚动（transform）下 lazy 不可靠，全部 eager */
       img.src = item.thumb || item.src;
       img.alt = item.caption || "作品 " + (i + 1);
-      img.loading = i < 8 ? "eager" : "lazy";
+      img.loading = "eager";
       img.decoding = "async";
+      /* 缩略图加载失败时降级到原图 */
+      if (item.thumb) {
+        img.onerror = (function(src) {
+          return function() { this.onerror = null; this.src = src; };
+        }(item.src));
+      }
       img.addEventListener("load", function (idx) {
         return function () { if (idx === currentIndex) setLandscapeFromIndex(idx); };
       }(i));

@@ -171,7 +171,18 @@
       renderThumbnails();
     }
     setLandscapeFromIndex(index);
-    mainImage.src = item.src;
+    /* 首张图：先用压缩图快速显示，失败则降级到原图 */
+    mainImage.onerror = null;
+    if (item.thumb) {
+      mainImage.src = item.thumb;
+      mainImage.onerror = function () {
+        mainImage.onerror = null;
+        mainImage.src = item.src;
+        updateLandscapeClass();
+      };
+    } else {
+      mainImage.src = item.src;
+    }
     mainImage.alt = item.caption || "作品 " + (index + 1);
     setCaptionTwoLines(item.caption || "", captionLine1, captionLine2);
     if (!noScroll) snapScrollToIndex(index);
@@ -470,9 +481,15 @@
       setCaptionTwoLines(data[nextIndex].caption || "", captionLine1, captionLine2);
       snapScrollToIndex(nextIndex);
 
-      /* 先用 1200px 缩略图占位（与原图受同一 max-width 约束，尺寸一致） */
+      /* 先用压缩图占位；加载失败时立即降级到原图，避免破图 */
+      mainImage.onerror = null;
       mainImage.src = nextThumbSrc;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
+      mainImage.onerror = function () {
+        mainImage.onerror = null;
+        mainImage.src = nextSrc;
+        updateLandscapeClass();
+      };
       if (mainImage.complete) updateLandscapeClass();
       else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
 

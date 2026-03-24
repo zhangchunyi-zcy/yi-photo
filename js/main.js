@@ -45,6 +45,62 @@
   var maxScroll = 0;
   var itemTops = [];
   var itemHeights = [];
+  /** 移动端同时请求过多缩略图会触发连接限制/失败 → 破图；按距当前项由近到远分批赋 src */
+  var THUMB_RAF_BATCH = 4;
+  var THUMB_SYNC_FIRST = 3;
+
+  function buildCentrifugalOrder(center, n) {
+    var o = [center];
+    for (var d = 1; d < n; d++) {
+      if (center + d < n) o.push(center + d);
+      if (center - d >= 0) o.push(center - d);
+    }
+    return o;
+  }
+
+  function assignThumbImg(img, item) {
+    if (!img || img.getAttribute("data-thumb-assigned") === "1") return;
+    img.setAttribute("data-thumb-assigned", "1");
+    img.decoding = "async";
+    if (item.thumb) {
+      img.onerror = function () {
+        img.onerror = null;
+        img.src = item.src;
+      };
+    }
+    img.src = item.thumb || item.src;
+  }
+
+  function ensureThumbLoaded(index) {
+    if (index < 0 || index >= data.length || !thumbListInner) return;
+    var wrap = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"]');
+    if (!wrap) return;
+    assignThumbImg(wrap.querySelector("img"), data[index]);
+  }
+
+  function prefetchThumbsAround(center) {
+    var k;
+    for (k = center - 2; k <= center + 16; k++) {
+      ensureThumbLoaded(k);
+    }
+  }
+
+  function startThumbPump(center) {
+    var order = buildCentrifugalOrder(center, data.length);
+    var qi = 0;
+    var syncEnd = Math.min(THUMB_SYNC_FIRST, order.length);
+    for (; qi < syncEnd; qi++) {
+      ensureThumbLoaded(order[qi]);
+    }
+    function pump() {
+      var b = 0;
+      for (; b < THUMB_RAF_BATCH && qi < order.length; b++, qi++) {
+        ensureThumbLoaded(order[qi]);
+      }
+      if (qi < order.length) requestAnimationFrame(pump);
+    }
+    if (qi < order.length) requestAnimationFrame(pump);
+  }
 
   function getTriggerY() {
     return headerEl ? headerEl.getBoundingClientRect().bottom + 2 : 80;
@@ -85,19 +141,7 @@
       wrap.className = "thumb-item" + (i === currentIndex ? " is-current" : "");
       wrap.setAttribute("data-index", String(i));
       var img = document.createElement("img");
-      img.src = item.thumb || item.src;
       img.alt = item.caption || "作品 " + (i + 1);
-      /* 虚拟滚动用 transform，lazy 不可靠；列表用压缩图体积小 */
-      img.loading = "eager";
-      img.decoding = "async";
-      if (item.thumb) {
-        img.onerror = (function (fullSrc) {
-          return function () {
-            this.onerror = null;
-            this.src = fullSrc;
-          };
-        })(item.src);
-      }
       img.addEventListener("load", function (idx) {
         return function () { if (idx === currentIndex) setLandscapeFromIndex(idx); };
       }(i));
@@ -105,6 +149,7 @@
       thumbListInner.appendChild(wrap);
     }
     measureItems();
+    startThumbPump(currentIndex);
   }
 
   function measureItems() {
@@ -177,7 +222,9 @@
     setCaptionTwoLines(item.caption || "", captionLine1, captionLine2);
     if (!noScroll) snapScrollToIndex(index);
 
-    /* 首屏先显示压缩图，原图后台解码后无缝替换 */
+    prefetchThumbsAround(index);
+
+    /* 首屏先显示压缩图；原图稍后再拉，避免与缩略图首波争抢带宽 */
     mainImage.onerror = null;
     if (item.thumb) {
       mainImage.src = item.thumb;
@@ -197,7 +244,14 @@
         updateLandscapeClass();
       }
     };
-    preloadFull.src = item.src;
+    function kickPreloadFull() {
+      preloadFull.src = item.src;
+    }
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(kickPreloadFull, { timeout: 2000 });
+    } else {
+      setTimeout(kickPreloadFull, 120);
+    }
 
     if (mainImage.complete) updateLandscapeClass();
     else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
@@ -275,6 +329,7 @@
       }
     }
     snapScrollToIndex(bestIdx);
+    prefetchThumbsAround(bestIdx);
   }
 
   function getSlotRectForIndex(index) {
@@ -419,6 +474,9 @@
     var nextSrc = data[nextIndex].src;
     var nextThumbSrc = data[nextIndex].thumb || nextSrc;
     var thisTransitionId = ++activeTransitionId;
+
+    ensureThumbLoaded(nextIndex);
+    ensureThumbLoaded(prevIndex);
 
     var fullImg = new Image();
     fullImg.src = nextSrc;

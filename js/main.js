@@ -186,20 +186,26 @@
     }
   }
 
-  /** 根据当前 scrollOffset 与触发线位置，计算应显示的索引 */
+  /**
+   * 与 snapToNearestItem 一致：取「触发线」在列表内容坐标中最接近哪一项的中心。
+   * 旧逻辑用「落在 [top,bottom)」在滑到底部时易落在空隙或仍指向倒数第二张，导致最后几张无法切到大图。
+   */
   function getIndexFromScrollOffset() {
     if (!itemTops.length || !thumbListEl) return 0;
     var triggerY = getTriggerY();
     var listRect = thumbListEl.getBoundingClientRect();
     var triggerInList = scrollOffsetPx + (triggerY - listRect.top);
-    var i = 0;
-    for (; i < itemTops.length; i++) {
-      var top = itemTops[i];
-      var bottom = top + itemHeights[i];
-      if (triggerInList >= top && triggerInList < bottom) return i;
-      if (triggerInList < top) return i > 0 ? i - 1 : 0;
+    var bestIdx = 0;
+    var bestDist = Infinity;
+    for (var i = 0; i < itemTops.length; i++) {
+      var center = itemTops[i] + itemHeights[i] / 2;
+      var dist = Math.abs(center - triggerInList);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = i;
+      }
     }
-    return i > 0 ? i - 1 : 0;
+    return bestIdx;
   }
 
   function updateCurrentClass() {

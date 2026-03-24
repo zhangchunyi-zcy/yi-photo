@@ -153,13 +153,11 @@ img {
 .thumb-item {
   flex-shrink: 0;
   width: var(--thumb-size);
-  aspect-ratio: 1;
   border-radius: 2px;
   overflow: hidden;
   cursor: pointer;
   line-height: 0;
   max-height: 80vh;
-  background: #eaeaea;
   transition: opacity 0.2s ease-out;
 }
 

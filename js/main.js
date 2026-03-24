@@ -259,6 +259,18 @@
     mainImageOverlay.setAttribute("aria-hidden", "true");
   }
 
+  /** Chrome：decode() 完成与首次把位图合成到主图层之间可能差 1～2 帧，叠层过早隐藏会露白底 */
+  function afterPaintFrames(cb, frameCount) {
+    frameCount = frameCount == null ? 3 : frameCount;
+    if (frameCount <= 0) {
+      cb();
+      return;
+    }
+    requestAnimationFrame(function () {
+      afterPaintFrames(cb, frameCount - 1);
+    });
+  }
+
   /**
    * 原图：先在叠层 img 解码并盖住底图，再写入底图并 decode，最后清空叠层。
    * 单张 img 直接换 src 时浏览器会先清空再绘新图，即使用 decode() 仍可能闪白；双缓冲可避免。
@@ -283,7 +295,7 @@
       function done() {
         if (guard && !guard()) return;
         if (capIdx != null && currentIndex !== capIdx) return;
-        finish();
+        afterPaintFrames(finish, 2);
       }
       if (typeof mainImage.decode === "function") {
         mainImage.decode().then(done).catch(done);
@@ -315,10 +327,13 @@
         mainImageOverlay.setAttribute("aria-hidden", "true");
         finish();
       }
+      function scheduleHideWhenBasePainted() {
+        afterPaintFrames(hideOverlay, 3);
+      }
       if (typeof mainImage.decode === "function") {
-        mainImage.decode().then(hideOverlay).catch(hideOverlay);
+        mainImage.decode().then(scheduleHideWhenBasePainted).catch(scheduleHideWhenBasePainted);
       } else {
-        hideOverlay();
+        scheduleHideWhenBasePainted();
       }
     }
 

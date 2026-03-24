@@ -233,6 +233,8 @@ img {
   max-width: 85%;
   width: 100%;
   overflow: visible;
+  /* 与 body 一致，img 未绘出像素前若露底则不易形成高对比「闪白」 */
+  background-color: #fff;
 }
 
 /* 首帧原图未就绪时只藏底图，叠层仍可显示解码后的原图，避免全透明闪白 */
@@ -248,6 +250,8 @@ img {
   object-fit: contain;
   object-position: center center;
   display: block;
+  /* Chrome：独立层，减少与叠层切换时的合成白帧 */
+  transform: translateZ(0);
 }
 
 /* 与底图同布局框叠放，先在此显示原图再同步到底图，避免换 src 白闪 */
@@ -265,6 +269,7 @@ img {
   opacity: 0;
   pointer-events: none;
   backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 /* 切换动画期间禁止主图与克隆层叠（避免双影） */

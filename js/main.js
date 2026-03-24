@@ -391,42 +391,6 @@
     return wrap;
   }
 
-  /**
-   * 入场克隆：缩略槽裁切 + 主图区尺寸解码，避免小槽 100% 再 scale 导致马赛克。
-   */
-  function createCloneInHiRes(src, thumbRect, endRect, fallbackSrc) {
-    var wrap = document.createElement("div");
-    wrap.className = "clone clone-in-hires";
-    wrap.style.cssText =
-      "left:" +
-      thumbRect.x +
-      "px;top:" +
-      thumbRect.y +
-      "px;width:" +
-      thumbRect.w +
-      "px;height:" +
-      thumbRect.h +
-      "px;transform-origin:0 0;overflow:hidden;";
-    var img = document.createElement("img");
-    img.src = src;
-    img.style.position = "absolute";
-    img.style.left = endRect.x - thumbRect.x + "px";
-    img.style.top = endRect.y - thumbRect.y + "px";
-    img.style.width = endRect.w + "px";
-    img.style.height = endRect.h + "px";
-    img.style.objectFit = "contain";
-    img.style.display = "block";
-    img.decoding = "async";
-    if (fallbackSrc && fallbackSrc !== src) {
-      img.onerror = function () {
-        img.onerror = null;
-        img.src = fallbackSrc;
-      };
-    }
-    wrap.appendChild(img);
-    return wrap;
-  }
-
   function runTransition(nextIndex, callback, fromWheel) {
     if (nextIndex === currentIndex || isAnimating || !data[nextIndex]) return;
     if (!fromWheel) pendingTargetIndex = null;
@@ -503,13 +467,22 @@
     cloneOut.style.zIndex = "1";
     cloneOut.style.willChange = "transform";
 
-    var cloneInSrc =
-      fullImg.complete && fullImg.naturalWidth > 0 ? nextSrc : nextThumbSrc;
-    var cloneIn = createCloneInHiRes(cloneInSrc, nextThumbRect, endMainRect, nextThumbSrc);
+    /* 入场必须与原先一致：克隆层在缩略槽位置且内容填满槽，再 transform 到主图区；
+       勿把大图绝对定位到主图区（与左侧裁切框不重叠时会完全看不见）。 */
+    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
     cloneIn.style.zIndex = "2";
     cloneIn.style.willChange = "transform";
     transitionLayer.appendChild(cloneOut);
     transitionLayer.appendChild(cloneIn);
+
+    var imgIn = cloneIn.querySelector("img");
+    if (imgIn && !imgIn.complete) {
+      imgIn.style.opacity = "0";
+      imgIn.addEventListener("load", function onImgInLoad() {
+        imgIn.removeEventListener("load", onImgInLoad);
+        imgIn.style.opacity = "1";
+      });
+    }
 
     mainImage.style.visibility = "hidden";
     mainImage.style.opacity = "0";

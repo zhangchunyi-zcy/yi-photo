@@ -298,14 +298,6 @@ img {
   pointer-events: none;
 }
 
-.transition-layer .clone.clone-in-hires > img {
-  width: auto;
-  height: auto;
-  max-width: none;
-  max-height: none;
-  pointer-events: none;
-}
-
 /* ===== 联系页 ===== */
 .contact-page {
   max-width: 480px;

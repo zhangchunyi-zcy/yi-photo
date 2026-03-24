@@ -45,6 +45,8 @@
   var maxScroll = 0;
   var itemTops = [];
   var itemHeights = [];
+  /** 缩略图分批加载后高度变化，需重算 maxScroll，否则易误判「到底」 */
+  var remeasureThumbTimer = null;
   /** 移动端同时请求过多缩略图会触发连接限制/失败 → 破图；按距当前项由近到远分批赋 src */
   var THUMB_RAF_BATCH = 4;
   var THUMB_SYNC_FIRST = 3;
@@ -143,7 +145,10 @@
       var img = document.createElement("img");
       img.alt = item.caption || "作品 " + (i + 1);
       img.addEventListener("load", function (idx) {
-        return function () { if (idx === currentIndex) setLandscapeFromIndex(idx); };
+        return function () {
+          if (idx === currentIndex) setLandscapeFromIndex(idx);
+          scheduleRemeasureThumbs();
+        };
       }(i));
       wrap.appendChild(img);
       thumbListInner.appendChild(wrap);
@@ -163,6 +168,15 @@
     var totalHeight = thumbListInner.scrollHeight;
     var listHeight = thumbListEl ? thumbListEl.clientHeight : 0;
     maxScroll = Math.max(0, totalHeight - listHeight);
+  }
+
+  function scheduleRemeasureThumbs() {
+    if (remeasureThumbTimer) clearTimeout(remeasureThumbTimer);
+    remeasureThumbTimer = setTimeout(function () {
+      remeasureThumbTimer = null;
+      measureItems();
+      setScrollOffset(scrollOffsetPx);
+    }, 40);
   }
 
   function setScrollOffset(val) {
@@ -368,16 +382,7 @@
     } else if (opts.fromTouch) {
       delta *= TOUCH_DAMP;
     }
-    if (scrollOffsetPx <= 0 && delta < 0 && data.length > 1) {
-      setScrollOffset(maxScroll);
-      runTransition((currentIndex - 1 + data.length) % data.length, null, true);
-      return;
-    }
-    if (scrollOffsetPx >= maxScroll - 2 && delta > 0 && data.length > 1) {
-      setScrollOffset(0);
-      runTransition((currentIndex + 1) % data.length, null, true);
-      return;
-    }
+    /* 不在列表首尾做「循环到另一端 / 换张」，避免滑到中途因 maxScroll 未更新误触「到底」后跳回开头 */
     setScrollOffset(scrollOffsetPx + delta);
     if (scrollEndTimer) clearTimeout(scrollEndTimer);
     scrollEndTimer = setTimeout(onScrollEnd, SCROLL_END_DELAY);

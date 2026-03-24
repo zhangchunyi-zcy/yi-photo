@@ -34,6 +34,8 @@
     <div class="main-image-zone">
       <div class="main-image-wrap" id="mainImageWrap">
         <img class="main-image" id="mainImage" src="" alt="" fetchpriority="high" decoding="async" />
+        <!-- 叠层：原图先在此解码再盖住底图，避免单 img 换 src 清空一帧白闪 -->
+        <img class="main-image main-image-overlay" id="mainImageOverlay" alt="" aria-hidden="true" decoding="sync" />
       </div>
     </div>
   </main>

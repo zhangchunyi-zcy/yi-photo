@@ -245,8 +245,25 @@ img {
   display: block;
 }
 
+/* 与底图同布局框叠放，先在此显示原图再同步到底图，避免换 src 白闪 */
+.main-image-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  display: block;
+  object-fit: contain;
+  object-position: center center;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* 切换动画期间禁止主图与克隆层叠（避免双影） */
-.main-image[data-transitioning="1"] {
+.main-image-wrap[data-transitioning="1"] .main-image,
+.main-image-wrap[data-transitioning="1"] .main-image-overlay {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none;
@@ -268,6 +285,10 @@ img {
   object-fit: contain;
   object-position: right center;
   display: block;
+}
+
+.main-image-wrap.is-landscape .main-image-overlay {
+  object-position: right center;
 }
 
 /* ===== 过渡动画层（GPU 加速，减少卡顿） ===== */
@@ -459,11 +480,13 @@ img {
     align-items: center;
   }
 
-  .main-image {
+  .main-image,
+  .main-image-overlay {
     max-height: min(58vh, calc(100dvh - var(--header-offset) - 5.5rem));
   }
 
-  .main-image-wrap.is-landscape .main-image {
+  .main-image-wrap.is-landscape .main-image,
+  .main-image-wrap.is-landscape .main-image-overlay {
     max-height: min(54vh, calc(100dvh - var(--header-offset) - 5.5rem));
     max-width: 100%;
     width: auto;
@@ -505,11 +528,13 @@ img {
     font-size: 0.6rem;
   }
 
-  .main-image {
+  .main-image,
+  .main-image-overlay {
     max-height: min(48vh, calc(100dvh - var(--header-offset) - 24vh));
   }
 
-  .main-image-wrap.is-landscape .main-image {
+  .main-image-wrap.is-landscape .main-image,
+  .main-image-wrap.is-landscape .main-image-overlay {
     max-height: min(44vh, calc(100dvh - var(--header-offset) - 24vh));
     max-width: 100%;
     object-position: center center;

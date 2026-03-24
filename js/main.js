@@ -36,6 +36,7 @@
   var thumbListInner = document.getElementById("thumbListInner");
   var mainImageWrap = document.getElementById("mainImageWrap");
   var mainImage = document.getElementById("mainImage");
+  var mainImageOverlay = document.getElementById("mainImageOverlay");
   var captionLine1 = document.getElementById("captionLine1");
   var captionLine2 = document.getElementById("captionLine2");
   var transitionLayer = document.getElementById("transitionLayer");
@@ -249,9 +250,18 @@
     }
   }
 
+  function resetMainImageOverlay() {
+    if (!mainImageOverlay) return;
+    mainImageOverlay.style.opacity = "0";
+    mainImageOverlay.style.visibility = "";
+    if (mainImageOverlay.hasAttribute("src")) mainImageOverlay.removeAttribute("src");
+    mainImageOverlay.setAttribute("aria-hidden", "true");
+  }
+
   /**
-   * 原图就绪后写入主图并用 decode() 再呈现，避免换 src 解码前一帧白闪。
-   * options.capIdx：与 currentIndex 一致才应用；options.guard：返回 false 则中止（如过渡 id）。
+   * 原图：先在叠层 img 解码并盖住底图，再写入底图并 decode，最后清空叠层。
+   * 单张 img 直接换 src 时浏览器会先清空再绘新图，即使用 decode() 仍可能闪白；双缓冲可避免。
+   * options.capIdx / guard：同上。
    */
   function applyMainImageFullSrc(src, options) {
     options = options || {};
@@ -259,18 +269,76 @@
     var guard = options.guard;
     if (guard && !guard()) return;
     if (capIdx != null && currentIndex !== capIdx) return;
-    mainImage.src = src;
-    function done() {
+
+    function finish() {
       if (guard && !guard()) return;
       if (capIdx != null && currentIndex !== capIdx) return;
       updateLandscapeClass();
     }
-    if (typeof mainImage.decode === "function") {
-      mainImage.decode().then(done).catch(done);
-    } else if (mainImage.complete) {
-      done();
+
+    function fallbackSingleImg() {
+      mainImage.src = src;
+      function done() {
+        if (guard && !guard()) return;
+        if (capIdx != null && currentIndex !== capIdx) return;
+        finish();
+      }
+      if (typeof mainImage.decode === "function") {
+        mainImage.decode().then(done).catch(done);
+      } else if (mainImage.complete) {
+        done();
+      } else {
+        mainImage.addEventListener("load", done, { once: true });
+      }
+    }
+
+    if (!mainImageOverlay) {
+      fallbackSingleImg();
+      return;
+    }
+
+    mainImageOverlay.alt = "";
+    mainImageOverlay.removeAttribute("aria-hidden");
+    mainImageOverlay.src = src;
+
+    function syncBaseThenClearOverlay() {
+      if (guard && !guard()) return;
+      if (capIdx != null && currentIndex !== capIdx) return;
+      mainImage.src = src;
+      function hideOverlay() {
+        if (guard && !guard()) return;
+        if (capIdx != null && currentIndex !== capIdx) return;
+        mainImageOverlay.style.opacity = "0";
+        mainImageOverlay.removeAttribute("src");
+        mainImageOverlay.setAttribute("aria-hidden", "true");
+        finish();
+      }
+      if (typeof mainImage.decode === "function") {
+        mainImage.decode().then(hideOverlay).catch(hideOverlay);
+      } else {
+        hideOverlay();
+      }
+    }
+
+    function afterOverlayPaintReady() {
+      if (guard && !guard()) return;
+      if (capIdx != null && currentIndex !== capIdx) return;
+      mainImageOverlay.style.opacity = "1";
+      requestAnimationFrame(function () {
+        requestAnimationFrame(syncBaseThenClearOverlay);
+      });
+    }
+
+    function onOverlayReady() {
+      afterOverlayPaintReady();
+    }
+
+    if (typeof mainImageOverlay.decode === "function") {
+      mainImageOverlay.decode().then(onOverlayReady).catch(onOverlayReady);
+    } else if (mainImageOverlay.complete && mainImageOverlay.naturalWidth > 0) {
+      onOverlayReady();
     } else {
-      mainImage.addEventListener("load", done, { once: true });
+      mainImageOverlay.addEventListener("load", onOverlayReady, { once: true });
     }
   }
 
@@ -278,6 +346,7 @@
     if (index < 0 || index >= data.length) return;
     var item = data[index];
     currentIndex = index;
+    resetMainImageOverlay();
     if (thumbListInner.querySelector(".thumb-item")) {
       updateCurrentClass();
     } else {
@@ -593,9 +662,7 @@
       });
     }
 
-    mainImage.style.visibility = "hidden";
-    mainImage.style.opacity = "0";
-    mainImage.setAttribute("data-transitioning", "1");
+    if (mainImageWrap) mainImageWrap.setAttribute("data-transitioning", "1");
     cloneOut.style.transition = "none";
     cloneIn.style.transition = "none";
     cloneOut.style.transform = "translate3d(0,0,0) scale3d(1,1,1)";
@@ -633,6 +700,7 @@
       }
 
       var capturedId = thisTransitionId;
+      resetMainImageOverlay();
       mainImage.onerror = null;
       mainImage.src = nextThumbSrc;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
@@ -664,9 +732,7 @@
 
       requestAnimationFrame(function () {
         requestAnimationFrame(function () {
-          mainImage.style.visibility = "";
-          mainImage.style.opacity = "";
-          mainImage.removeAttribute("data-transitioning");
+          if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
           isAnimating = false;
           var flush = pendingTargetIndex;
           pendingTargetIndex = null;

@@ -249,6 +249,31 @@
     }
   }
 
+  /**
+   * 原图就绪后写入主图并用 decode() 再呈现，避免换 src 解码前一帧白闪。
+   * options.capIdx：与 currentIndex 一致才应用；options.guard：返回 false 则中止（如过渡 id）。
+   */
+  function applyMainImageFullSrc(src, options) {
+    options = options || {};
+    var capIdx = options.capIdx;
+    var guard = options.guard;
+    if (guard && !guard()) return;
+    if (capIdx != null && currentIndex !== capIdx) return;
+    mainImage.src = src;
+    function done() {
+      if (guard && !guard()) return;
+      if (capIdx != null && currentIndex !== capIdx) return;
+      updateLandscapeClass();
+    }
+    if (typeof mainImage.decode === "function") {
+      mainImage.decode().then(done).catch(done);
+    } else if (mainImage.complete) {
+      done();
+    } else {
+      mainImage.addEventListener("load", done, { once: true });
+    }
+  }
+
   function setMainImage(index, noScroll) {
     if (index < 0 || index >= data.length) return;
     var item = data[index];
@@ -270,36 +295,33 @@
     prefetchThumbsAround(index);
 
     /* 首屏先显示压缩图；原图稍后再拉，避免与缩略图首波争抢带宽 */
+    var capIdx = index;
     mainImage.onerror = null;
     if (item.thumb) {
       mainImage.src = item.thumb;
       mainImage.onerror = function () {
         mainImage.onerror = null;
-        mainImage.src = item.src;
-        updateLandscapeClass();
+        applyMainImageFullSrc(item.src, { capIdx: capIdx });
       };
-    } else {
-      mainImage.src = item.src;
-    }
-    var preloadFull = new Image();
-    var capIdx = index;
-    preloadFull.onload = function () {
-      if (currentIndex === capIdx) {
-        mainImage.src = item.src;
-        updateLandscapeClass();
+      var preloadFull = new Image();
+      preloadFull.onload = function () {
+        if (currentIndex !== capIdx) return;
+        applyMainImageFullSrc(item.src, { capIdx: capIdx });
+      };
+      function kickPreloadFull() {
+        preloadFull.src = item.src;
       }
-    };
-    function kickPreloadFull() {
-      preloadFull.src = item.src;
-    }
-    if (typeof requestIdleCallback === "function") {
-      requestIdleCallback(kickPreloadFull, { timeout: 2000 });
-    } else {
-      setTimeout(kickPreloadFull, 120);
-    }
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(kickPreloadFull, { timeout: 2000 });
+      } else {
+        setTimeout(kickPreloadFull, 120);
+      }
 
-    if (mainImage.complete) updateLandscapeClass();
-    else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
+      if (mainImage.complete) updateLandscapeClass();
+      else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
+    } else {
+      applyMainImageFullSrc(item.src, { capIdx: capIdx });
+    }
   }
 
   /** 将列表滚动到使指定索引的项居中于触发线（与 getIndexFromScrollOffset 同一坐标系） */
@@ -610,20 +632,25 @@
         snapScrollToIndex(nextIndex);
       }
 
+      var capturedId = thisTransitionId;
       mainImage.onerror = null;
       mainImage.src = nextThumbSrc;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
       mainImage.onerror = function () {
         mainImage.onerror = null;
-        mainImage.src = nextSrc;
-        updateLandscapeClass();
+        applyMainImageFullSrc(nextSrc, {
+          guard: function () {
+            return activeTransitionId === capturedId;
+          },
+        });
       };
-
-      var capturedId = thisTransitionId;
       function upgradeToFull() {
         if (activeTransitionId !== capturedId) return;
-        mainImage.src = nextSrc;
-        updateLandscapeClass();
+        applyMainImageFullSrc(nextSrc, {
+          guard: function () {
+            return activeTransitionId === capturedId;
+          },
+        });
       }
       if (fullImg.complete && fullImg.naturalWidth > 0) {
         upgradeToFull();

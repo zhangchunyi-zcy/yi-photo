@@ -48,6 +48,7 @@ window.PHOTOS_DATA = [
   { src: "photos/摄影作品/人像Ⅵ GR3.jpg", caption: "人像Ⅵ GR3" },
   { src: "photos/摄影作品/树隙 Nikon.JPG", caption: "树隙 Nikon" },
   { src: "photos/摄影作品/她和她 Mobile phone.jpg", caption: "她和她 Mobile phone" },
+  { src: "photos/摄影作品/跳水 Contax G1.jpg", caption: "跳水 Contax G1" },
   { src: "photos/摄影作品/围栏 Contax G1.JPG", caption: "围栏 Contax G1" },
   { src: "photos/摄影作品/午后 Contax G1.jpg", caption: "午后 Contax G1" },
   { src: "photos/摄影作品/向往 Contax G1.JPG", caption: "向往 Contax G1" },

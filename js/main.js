@@ -49,9 +49,9 @@
   /** 缩略图分批加载后高度变化，需重算 maxScroll，否则易误判「到底」 */
   var remeasureThumbTimer = null;
   /** 移动端同时请求过多缩略图会触发连接限制/失败 → 破图；按距当前项由近到远分批赋 src */
-  var THUMB_RAF_BATCH = 4;
-  /** 首屏左侧列表一次同步赋 src 的数量（约一屏 9 张），余下仍按 RAF 分批 */
-  var THUMB_FIRST_SCREEN = 9;
+  var THUMB_RAF_BATCH = 8;
+  /** 首屏左侧列表一次同步赋 src 的数量（覆盖一屏槽位 + 缓冲，避免只先出 4 张） */
+  var THUMB_FIRST_SCREEN = 20;
 
   function buildCentrifugalOrder(center, n) {
     var o = [center];
@@ -148,6 +148,12 @@
       img.alt = item.caption || "作品 " + (i + 1);
       img.addEventListener("load", function (idx) {
         return function () {
+          var w = this.naturalWidth;
+          var h = this.naturalHeight;
+          if (w > 0 && h > 0) {
+            var p = this.closest(".thumb-item");
+            if (p) p.style.aspectRatio = w + " / " + h;
+          }
           if (idx === currentIndex) setLandscapeFromIndex(idx);
           scheduleRemeasureThumbs();
         };
@@ -452,6 +458,23 @@
   }
 
   /**
+   * 过渡动画用：在缩略图槽内按「指定原图/目标图的像素宽高比」做 object-fit:contain 的视口矩形。
+   * 与主图区 getContainRectInWrap 使用同一组 natW/natH，避免压缩图与原图比例不一致时缩放终点跳变。
+   */
+  function getThumbContainRectForTransition(index, natW, natH) {
+    var wrap = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"]');
+    if (!wrap || !natW || !natH) return null;
+    var br = wrap.getBoundingClientRect();
+    if (br.width < 2 || br.height < 2) return null;
+    var scale = Math.min(br.width / natW, br.height / natH);
+    var iw = natW * scale;
+    var ih = natH * scale;
+    var x = br.left + (br.width - iw) / 2;
+    var y = br.top + (br.height - ih) / 2;
+    return { x: x, y: y, w: iw, h: ih };
+  }
+
+  /**
    * 下一张图在 mainImageWrap 内 object-fit:contain 的显示矩形（左顶点与页面一致）
    * 与 CSS 中横图右对齐 / 移动端居中一致
    */
@@ -614,17 +637,6 @@
       if (callback) callback();
       return;
     }
-    var fromThumbRect = getThumbImgRect(prevIndex);
-    var nextThumbRect = getThumbImgRect(nextIndex);
-    if (!fromThumbRect || !nextThumbRect) {
-      isAnimating = false;
-      if (callback) callback();
-      return;
-    }
-    if (!fromWheel) {
-      currentIndex = nextIndex;
-      updateCurrentClass();
-    }
 
     var nextSrc = data[nextIndex].src;
     var nextThumbSrc = data[nextIndex].thumb || nextSrc;
@@ -645,6 +657,32 @@
     } else if (thumbImgEl && thumbImgEl.naturalWidth > 0) {
       natW = thumbImgEl.naturalWidth;
       natH = thumbImgEl.naturalHeight;
+    }
+
+    var prevItem = data[prevIndex];
+    var prevNatW =
+      prevItem && prevItem._fullNatW > 0 ? prevItem._fullNatW : mainImage.naturalWidth;
+    var prevNatH =
+      prevItem && prevItem._fullNatH > 0 ? prevItem._fullNatH : mainImage.naturalHeight;
+    var fromThumbRect =
+      prevNatW > 0 && prevNatH > 0
+        ? getThumbContainRectForTransition(prevIndex, prevNatW, prevNatH)
+        : null;
+    if (!fromThumbRect) fromThumbRect = getThumbImgRect(prevIndex);
+
+    var nextThumbRect =
+      natW > 0 && natH > 0
+        ? getThumbContainRectForTransition(nextIndex, natW, natH)
+        : null;
+    if (!nextThumbRect) nextThumbRect = getThumbImgRect(nextIndex);
+    if (!fromThumbRect || !nextThumbRect) {
+      isAnimating = false;
+      if (callback) callback();
+      return;
+    }
+    if (!fromWheel) {
+      currentIndex = nextIndex;
+      updateCurrentClass();
     }
 
     while (transitionLayer.firstChild) {
@@ -815,11 +853,19 @@
     setScrollOffset(scrollOffsetPx);
   }
 
+  function onMainImageLoad() {
+    if (mainImage.naturalWidth > 0 && currentIndex >= 0 && currentIndex < data.length) {
+      data[currentIndex]._fullNatW = mainImage.naturalWidth;
+      data[currentIndex]._fullNatH = mainImage.naturalHeight;
+    }
+    updateLandscapeClass();
+  }
+
   function init() {
     if (!data.length) return;
     renderThumbnails();
     setMainImage(0);
-    mainImage.addEventListener("load", updateLandscapeClass);
+    mainImage.addEventListener("load", onMainImageLoad);
     thumbListEl.addEventListener("click", onThumbClick);
     document.addEventListener("wheel", onWheel, { passive: false });
     document.addEventListener("keydown", onKeyDown);

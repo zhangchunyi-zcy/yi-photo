@@ -153,11 +153,12 @@ img {
 .thumb-item {
   flex-shrink: 0;
   width: var(--thumb-size);
+  /* 占位高度：避免未 decode 的 img 高度为 0，首屏只能看到前几项；加载后由 JS 写入真实 aspect-ratio */
+  aspect-ratio: 3 / 2;
   border-radius: 2px;
   overflow: hidden;
   cursor: pointer;
   line-height: 0;
-  max-height: 80vh;
   transition: opacity 0.2s ease-out;
 }
 
@@ -169,7 +170,9 @@ img {
 
 .thumb-item img {
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: contain;
+  object-position: center center;
   display: block;
   vertical-align: middle;
 }

@@ -327,7 +327,8 @@ img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  object-position: left top;
+  /* 具体对齐由 JS 与主图 .main-image 一致（横图桌面为 right center） */
+  object-position: center center;
   display: block;
   pointer-events: none;
 }

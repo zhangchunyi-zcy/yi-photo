@@ -523,6 +523,16 @@
     return getThumbImgRect(index);
   }
 
+  /** 与 setLandscapeFromIndex 一致：用列表缩略图判断横竖（无尺寸时由调用方用像素尺寸兜底） */
+  function isLandscapeFromThumbIndex(index) {
+    var thumb = thumbListInner.querySelector('.thumb-item[data-index="' + index + '"] img');
+    return !!(thumb && thumb.naturalWidth > 0 && thumb.naturalWidth >= thumb.naturalHeight);
+  }
+
+  function objectPositionForMainClone(isLandscape, isMobile) {
+    return isLandscape && !isMobile ? "right center" : "center center";
+  }
+
   function checkTriggerAndTransition() {
     rafScheduled = false;
     var idx = getIndexFromScrollOffset();
@@ -599,7 +609,7 @@
     scrollEndTimer = setTimeout(onScrollEnd, SCROLL_END_DELAY);
   }
 
-  function createClone(src, rect) {
+  function createClone(src, rect, objectPosition) {
     var wrap = document.createElement("div");
     wrap.className = "clone";
     wrap.style.cssText =
@@ -618,7 +628,7 @@
     img.style.height = "100%";
     img.style.display = "block";
     img.style.objectFit = "contain";
-    img.style.objectPosition = "left top";
+    img.style.objectPosition = objectPosition || "center center";
     img.decoding = "sync";
     wrap.appendChild(img);
     return wrap;
@@ -689,19 +699,26 @@
       transitionLayer.removeChild(transitionLayer.firstChild);
     }
 
-    var mainImgRect = getRect(mainImage);
-    setLandscapeFromIndex(nextIndex);
-    var wrapRect = getRect(mainImageWrap);
     var isMobile = window.matchMedia("(max-width: 900px)").matches;
+    var prevIsLandscape =
+      mainImageWrap && mainImageWrap.classList.contains("is-landscape");
+    var nextIsLandscape =
+      natW > 0 && natH > 0 ? natW >= natH : isLandscapeFromThumbIndex(nextIndex);
+
+    var mainImgRect = getRect(mainImage);
+
+    var wrapRect = { x: 0, y: 0, w: 0, h: 0 };
+    if (mainImageWrap) {
+      mainImageWrap.classList.toggle("is-landscape", nextIsLandscape);
+      void mainImageWrap.offsetWidth;
+      wrapRect = getRect(mainImageWrap);
+      mainImageWrap.classList.toggle("is-landscape", prevIsLandscape);
+      void mainImageWrap.offsetWidth;
+    }
+
     var endMainRect = null;
     if (natW > 0 && natH > 0) {
-      endMainRect = getContainRectInWrap(
-        natW,
-        natH,
-        wrapRect,
-        mainImageWrap.classList.contains("is-landscape"),
-        isMobile
-      );
+      endMainRect = getContainRectInWrap(natW, natH, wrapRect, nextIsLandscape, isMobile);
     }
     if (!endMainRect) {
       endMainRect = { x: wrapRect.x, y: wrapRect.y, w: wrapRect.w, h: wrapRect.h };
@@ -714,13 +731,21 @@
       mainImage.getAttribute("src") ||
       data[prevIndex].thumb ||
       data[prevIndex].src;
-    var cloneOut = createClone(outSrc, mainImgRect);
+    var cloneOut = createClone(
+      outSrc,
+      mainImgRect,
+      objectPositionForMainClone(prevIsLandscape, isMobile)
+    );
     cloneOut.style.zIndex = "1";
     cloneOut.style.willChange = "transform";
 
     /* 入场必须与原先一致：克隆层在缩略槽位置且内容填满槽，再 transform 到主图区；
        勿把大图绝对定位到主图区（与左侧裁切框不重叠时会完全看不见）。 */
-    var cloneIn = createClone(nextThumbSrc, nextThumbRect);
+    var cloneIn = createClone(
+      nextThumbSrc,
+      nextThumbRect,
+      objectPositionForMainClone(nextIsLandscape, isMobile)
+    );
     cloneIn.style.zIndex = "2";
     cloneIn.style.willChange = "transform";
     transitionLayer.appendChild(cloneOut);

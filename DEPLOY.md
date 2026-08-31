@@ -1,70 +1,70 @@
-# 通过 GitHub + Vercel 部署作品集（极速访问）
+# 通过 GitHub + 腾讯云 COS/CDN 部署作品集
 
-按下面步骤操作即可获得一个可分享的在线链接（如 `https://你的项目名.vercel.app`）。
+站点托管在 **腾讯云香港 COS**，经 **境外 CDN** 加速；**git push** 后 GitHub Actions 自动发布。国内（尤其深圳）访问通常优于 Vercel，**无需 VPN**。
+
+完整控制台步骤见 **[《部署到腾讯云COS+CDN.md》](部署到腾讯云COS+CDN.md)**。
+
+---
 
 ## 一、把项目推到 GitHub
 
-1. **安装 Git**（若未安装）  
-   - 官网：https://git-scm.com/
+若尚未关联 GitHub：
 
-2. **在项目文件夹里初始化并提交**
-   ```bash
-   cd "/Users/91002302/Desktop/摄影作品集网站"
-   git init
-   git add .
-   git commit -m "Initial: 摄影作品集网站"
-   ```
-
-3. **在 GitHub 新建仓库**
-   - 打开 https://github.com/new
-   - 仓库名自定（如 `photo-portfolio`），选 **Public**，不要勾选 “Add a README”
-   - 创建后记下仓库地址，例如：`https://github.com/你的用户名/photo-portfolio.git`
-
-4. **关联并推送**
-   ```bash
-   git remote add origin https://github.com/你的用户名/你的仓库名.git
-   git branch -M main
-   git push -u origin main
-   ```
-   按提示用 GitHub 账号登录或配置 SSH。
+```bash
+cd "/Users/91002302/Desktop/yi/vibe coding/摄影作品集网站"
+git remote add origin git@github.com:你的用户名/yi-photo.git
+git branch -M main
+git push -u origin main
+```
 
 ---
 
-## 二、用 Vercel 部署
+## 二、腾讯云 COS + CDN（一次性）
 
-1. **打开 Vercel**  
-   https://vercel.com → 用 GitHub 登录。
-
-2. **导入项目**
-   - 点击 **Add New…** → **Project**
-   - 在列表里选刚推送的 **你的仓库**（若未出现，点 **Import Git Repository** 并授权）
-   - **Framework Preset** 保持 **Other** 即可
-   - **Root Directory** 不填（用仓库根目录）
-   - 点击 **Deploy**
-
-3. **等待部署**
-   - 约 1～2 分钟会生成一个域名，例如：  
-     `https://photo-portfolio-xxx.vercel.app`
-
-4. **分享链接**
-   - 在 Vercel 项目页的 **Domains** 里复制该地址，即可发给他人访问。
+1. 创建 **香港** COS 桶，开启 **静态网站**（索引 `index.html`）
+2. 创建 **境外加速** CDN，源站指向该桶
+3. 配置 CDN 缓存规则（见《部署到腾讯云COS+CDN.md》）
+4. 在 GitHub 仓库 **Settings → Secrets** 配置：
+   - `TENCENT_SECRET_ID`
+   - `TENCENT_SECRET_KEY`
+   - `COS_BUCKET`
+   - `CDN_DOMAIN`（可选，用于自动刷新 CDN）
 
 ---
 
-## 三、之后更新网站
+## 三、首次自动部署
 
-改完本地代码后执行：
+```bash
+git push origin main
+```
+
+打开 GitHub 仓库 **Actions** 页，确认 `Deploy to Tencent COS` 工作流成功。用 CDN 控制台提供的域名访问站点。
+
+---
+
+## 四、绑定 yi-photo.cn（可选）
+
+1. 在 CDN **境外加速** 下尝试添加 `yi-photo.cn`
+2. 校验通过后，在 [腾讯云 DNS](https://console.cloud.tencent.com/cns) 将 `@` CNAME 到 CDN 提供的地址
+3. 从 Vercel 移除该域名（若仍在使用 Vercel）
+
+未备案时 `.cn` 绑境内 CDN 会失败；境外 CDN 以控制台校验为准。
+
+---
+
+## 五、之后更新网站
 
 ```bash
 git add .
 git commit -m "更新内容说明"
-git push
+git push origin main
 ```
 
-Vercel 会自动重新部署，几分钟内新链接内容会更新。
+Actions 自动同步 COS 并刷新 CDN（若已配置 `CDN_DOMAIN`）。
 
 ---
 
-## 可选：自定义域名
+## 六、自定义域名与备案
 
-在 Vercel 项目 → **Settings** → **Domains** 里可绑定自己的域名（需在域名服务商处把 DNS 指到 Vercel 提供的记录）。
+- **不备案**：可用 CDN 默认域名；可尝试 `yi-photo.cn` + 境外 CDN
+- **备案后**：可切换 **境内 CDN** + **大陆 COS 桶**，国内访问更快（见《部署到腾讯云COS+CDN.md》第四节）

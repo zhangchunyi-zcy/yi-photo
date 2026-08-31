@@ -1,0 +1,112 @@
+# 推送 main 分支后，将静态站点同步到腾讯云香港 COS，并刷新 CDN 缓存。
+# 前置：在 GitHub 仓库 Settings → Secrets 配置 TENCENT_SECRET_ID、TENCENT_SECRET_KEY、COS_BUCKET
+# 详见仓库根目录《部署到腾讯云COS+CDN.md》
+
+name: Deploy to Tencent COS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  COS_REGION: ap-hongkong
+  COSCLI_VERSION: v1.0.4
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install coscli
+        run: |
+          curl -fsSL "https://github.com/tencentyun/coscli/releases/download/${COSCLI_VERSION}/coscli-linux-amd64" -o coscli
+          chmod +x coscli
+          sudo mv coscli /usr/local/bin/coscli
+
+      - name: Configure coscli
+        run: |
+          coscli config init \
+            --secret-id "${{ secrets.TENCENT_SECRET_ID }}" \
+            --secret-key "${{ secrets.TENCENT_SECRET_KEY }}" \
+            --bucket-name "${{ secrets.COS_BUCKET }}" \
+            --region "${COS_REGION}" \
+            --ofs false \
+            --force
+
+      - name: Sync site to COS
+        run: |
+          coscli sync . "cos://${{ secrets.COS_BUCKET }}/" \
+            --recursive \
+            --exclude ".git/**" \
+            --exclude ".github/**" \
+            --exclude ".cursor/**" \
+            --exclude ".vercel/**" \
+            --exclude "**/.DS_Store" \
+            --exclude "**/Thumbs.db" \
+            --exclude "**/*.log" \
+            --exclude "**/*.md" \
+            --exclude "**/*.sh" \
+            --exclude "**/*.txt" \
+            --exclude ".gitignore"
+
+      - name: Purge CDN cache
+        if: ${{ secrets.CDN_DOMAIN != '' }}
+        env:
+          CDN_DOMAIN: ${{ secrets.CDN_DOMAIN }}
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+        run: |
+          python3 << 'PY'
+          import hashlib, hmac, json, os, sys, time, urllib.request
+
+          secret_id = os.environ["TENCENT_SECRET_ID"]
+          secret_key = os.environ["TENCENT_SECRET_KEY"]
+          service = "cdn"
+          host = "cdn.tencentcloudapi.com"
+          payload = json.dumps({"Paths": ["/"], "FlushType": "flush"})
+          timestamp = int(time.time())
+          date = time.strftime("%Y-%m-%d", time.gmtime(timestamp))
+
+          def sign(key, msg):
+              return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+          canonical_request = (
+              "POST\n/\n\ncontent-type:application/json; charset=utf-8\nhost:" + host + "\n\n"
+              "content-type;host\n" + hashlib.sha256(payload.encode()).hexdigest()
+          )
+          scope = date + "/" + service + "/tc3_request"
+          sts = (
+              "TC3-HMAC-SHA256\n" + str(timestamp) + "\n" + scope + "\n"
+              + hashlib.sha256(canonical_request.encode()).hexdigest()
+          )
+          sig = hmac.new(
+              sign(sign(sign(("TC3" + secret_key).encode(), date), service), "tc3_request"),
+              sts.encode(),
+              hashlib.sha256,
+          ).hexdigest()
+          auth = (
+              "TC3-HMAC-SHA256 Credential=" + secret_id + "/" + scope
+              + ", SignedHeaders=content-type;host, Signature=" + sig
+          )
+          req = urllib.request.Request(
+              "https://" + host,
+              data=payload.encode(),
+              headers={
+                  "Authorization": auth,
+                  "Content-Type": "application/json; charset=utf-8",
+                  "Host": host,
+                  "X-TC-Action": "PurgePathCache",
+                  "X-TC-Timestamp": str(timestamp),
+                  "X-TC-Version": "2018-06-06",
+                  "X-TC-Region": "",
+              },
+              method="POST",
+          )
+          try:
+              print(urllib.request.urlopen(req, timeout=30).read().decode())
+          except Exception as e:
+              print("CDN purge failed (non-fatal):", e, file=sys.stderr)
+          PY

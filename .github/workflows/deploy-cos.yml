@@ -53,12 +53,15 @@ jobs:
             --exclude ".gitignore"
 
       - name: Purge CDN cache
-        if: ${{ secrets.CDN_DOMAIN != '' }}
         env:
           CDN_DOMAIN: ${{ secrets.CDN_DOMAIN }}
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
         run: |
+          if [ -z "$CDN_DOMAIN" ]; then
+            echo "CDN_DOMAIN secret not set, skipping CDN purge"
+            exit 0
+          fi
           python3 << 'PY'
           import hashlib, hmac, json, os, sys, time, urllib.request
 

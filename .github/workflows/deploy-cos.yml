@@ -1,6 +1,5 @@
-# 推送 main 分支后，将静态站点同步到腾讯云香港 COS，并刷新 CDN 缓存。
-# 前置：GitHub Secrets：TENCENT_SECRET_ID、TENCENT_SECRET_KEY、COS_BUCKET；可选 CDN_DOMAIN
-# 详见仓库根目录《部署到腾讯云COS+CDN.md》
+# 推送 main 后同步静态站到腾讯云香港 COS，并刷新 CDN。
+# Secrets: TENCENT_SECRET_ID, TENCENT_SECRET_KEY, COS_BUCKET；可选 CDN_DOMAIN
 
 name: Deploy to Tencent COS
 
@@ -27,7 +26,20 @@ jobs:
           sudo mv coscli /usr/local/bin/coscli
           coscli --version
 
-      - name: Configure coscli
+      - name: Prepare staging site
+        run: |
+          # 只打包站点文件，避免同步仓库杂项；也避开 coscli 默认在源目录写 coscli_output 的冲突
+          STAGING="${RUNNER_TEMP}/yi-photo-site"
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING"
+          cp index.html contact.html "$STAGING/"
+          cp -R css js photos "$STAGING/"
+          echo "STAGING=$STAGING" >> "$GITHUB_ENV"
+          echo "Staging contents:"
+          find "$STAGING" -maxdepth 2 -type d | head -40
+          du -sh "$STAGING" "$STAGING/photos"
+
+      - name: Sync site to COS
         env:
           TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
           TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
@@ -37,45 +49,21 @@ jobs:
             echo "Missing required secrets: TENCENT_SECRET_ID / TENCENT_SECRET_KEY / COS_BUCKET"
             exit 1
           fi
-          # 新版 coscli 的 config init 不再支持 --bucket-name，直接写配置文件更稳
-          mkdir -p "$HOME"
-          cat > "$HOME/.cos.yaml" << EOF
-          cos:
-            base:
-              secretid: ${TENCENT_SECRET_ID}
-              secretkey: ${TENCENT_SECRET_KEY}
-              sessiontoken: ""
-              protocol: https
-            buckets:
-              - name: ${COS_BUCKET}
-                alias: photo
-                region: ${COS_REGION}
-                endpoint: cos.${COS_REGION}.myqcloud.com
-                ofs: false
-          EOF
-          # 去掉 heredoc 缩进空格
-          sed -i 's/^          //' "$HOME/.cos.yaml"
-          echo "cos.yaml ready; buckets:"
-          grep -E 'name:|region:|endpoint:' "$HOME/.cos.yaml"
+          FAIL_DIR="${RUNNER_TEMP}/coscli_fail"
+          LOG_DIR="${RUNNER_TEMP}/coscli_process"
+          mkdir -p "$FAIL_DIR" "$LOG_DIR"
 
-      - name: Sync site to COS
-        env:
-          COS_BUCKET: ${{ secrets.COS_BUCKET }}
-        run: |
-          coscli sync . "cos://${COS_BUCKET}/" \
+          # 已在本地用 coscli v1.0.9 验证：
+          # 1) sync . 会因 failOutputPath 落在源目录而失败
+          # 2) 使用仓库外 staging + --fail-output-path /tmp 可越过该检查
+          coscli sync "${STAGING}/" "cos://${COS_BUCKET}/" \
             -e "cos.${COS_REGION}.myqcloud.com" \
+            -i "${TENCENT_SECRET_ID}" \
+            -k "${TENCENT_SECRET_KEY}" \
+            --init-skip \
             -r \
-            --exclude ".git/**" \
-            --exclude ".github/**" \
-            --exclude ".cursor/**" \
-            --exclude ".vercel/**" \
-            --exclude "**/.DS_Store" \
-            --exclude "**/Thumbs.db" \
-            --exclude "**/*.log" \
-            --exclude "**/*.md" \
-            --exclude "**/*.sh" \
-            --exclude "**/*.txt" \
-            --exclude ".gitignore"
+            --fail-output-path "${FAIL_DIR}" \
+            --process-log-path "${LOG_DIR}"
 
       - name: Purge CDN cache
         env:

@@ -1,7 +1,6 @@
-// 摄影作品列表：src = 原图（photos/摄影作品）；thumb = 压缩图（photos/摄影作品压缩/「caption」 low.jpg）
-// caption = 文件名去掉扩展名；显示时按第一个空格分两行（第一行 0.8 字号，第二行 0.6 字号）
-// 列表压缩图请与同源原图同构图、同宽高比（仅降采样），否则仅影响左侧小图；主图只显示原图。
-// 注意：src 须与 Git 中文件名大小写完全一致（如 .JPG/.jpg），否则在 Linux/GitHub Pages 上会 404；本地 macOS 默认盘不区分大小写可能掩盖问题。
+// 摄影作品列表：只用压缩图（photos/摄影作品压缩/「caption」 low.jpg）
+// caption = 作品名；显示时按第一个空格分两行（第一行 0.8 字号，第二行 0.6 字号）
+// src 与 thumb 指向同一压缩图，减轻体积与加载时间；本地归档原片请自行另存，不进网站仓库。
 //
 window.PHOTOS_DATA = [
   { src: "photos/摄影作品/捕梦网Ⅰ Contax G1.JPG", caption: "捕梦网Ⅰ Contax G1" },
@@ -73,6 +72,7 @@ window.PHOTOS_DATA = [
 
 window.PHOTOS_DATA.forEach(function (item) {
   item.thumb = "photos/摄影作品压缩/" + item.caption + " low.jpg";
+  item.src = item.thumb; // 仅使用压缩版作为主图
 });
 
 window.PHOTOS_DATA = window.PHOTOS_DATA.sort(function (a, b) {

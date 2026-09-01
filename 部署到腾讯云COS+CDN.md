@@ -189,7 +189,6 @@ on:
 
 env:
   COS_REGION: ap-hongkong
-  COSCLI_VERSION: v1.0.4
 
 jobs:
   deploy:
@@ -200,9 +199,11 @@ jobs:
 
       - name: Install coscli
         run: |
-          curl -fsSL "https://github.com/tencentyun/coscli/releases/download/${COSCLI_VERSION}/coscli-linux-amd64" -o coscli
+          # 使用腾讯云官方直链，避免 GitHub release 文件名变更导致 404
+          curl -fsSL "https://cosbrowser.cloud.tencent.com/software/coscli/coscli-linux-amd64" -o coscli
           chmod +x coscli
           sudo mv coscli /usr/local/bin/coscli
+          coscli --version
 
       - name: Configure coscli
         run: |

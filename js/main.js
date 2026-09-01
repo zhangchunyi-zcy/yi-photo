@@ -48,10 +48,10 @@
   var itemHeights = [];
   /** 缩略图分批加载后高度变化，需重算 maxScroll，否则易误判「到底」 */
   var remeasureThumbTimer = null;
-  /** 移动端同时请求过多缩略图会触发连接限制/失败 → 破图；按距当前项由近到远分批赋 src */
-  var THUMB_RAF_BATCH = 8;
-  /** 首屏左侧列表一次同步赋 src 的数量（覆盖一屏槽位 + 缓冲，避免只先出 4 张） */
-  var THUMB_FIRST_SCREEN = 20;
+  /** 同时请求过多大会互相抢带宽，可见区下半截长时间空白；按距当前项由近到远分批赋 src */
+  var THUMB_RAF_BATCH = 4;
+  /** 首屏先只拉可见槽位 + 少量缓冲，让下半屏尽快出图，其余用定时器继续泵 */
+  var THUMB_FIRST_SCREEN = 12;
 
   function buildCentrifugalOrder(center, n) {
     var o = [center];
@@ -84,7 +84,7 @@
 
   function prefetchThumbsAround(center) {
     var k;
-    for (k = center - 2; k <= center + 16; k++) {
+    for (k = center - 4; k <= center + 24; k++) {
       ensureThumbLoaded(k);
     }
   }
@@ -96,14 +96,15 @@
     for (; qi < syncEnd; qi++) {
       ensureThumbLoaded(order[qi]);
     }
+    /* 用 setTimeout 而非仅 rAF：主线程忙于大图解码时 rAF 会被挤掉，下半列表迟迟不赋 src */
     function pump() {
       var b = 0;
       for (; b < THUMB_RAF_BATCH && qi < order.length; b++, qi++) {
         ensureThumbLoaded(order[qi]);
       }
-      if (qi < order.length) requestAnimationFrame(pump);
+      if (qi < order.length) setTimeout(pump, 32);
     }
-    if (qi < order.length) requestAnimationFrame(pump);
+    if (qi < order.length) setTimeout(pump, 32);
   }
 
   function getTriggerY() {

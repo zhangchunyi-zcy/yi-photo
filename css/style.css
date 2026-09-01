@@ -146,8 +146,9 @@ img {
   flex-direction: column;
   gap: var(--space-sm);
   padding-top: 2px;
-  will-change: transform;
+  /* 不用长期 will-change：部分浏览器会把子图片合成延后到鼠标交互才绘制 */
   backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .thumb-item {

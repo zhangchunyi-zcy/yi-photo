@@ -62,6 +62,14 @@
     return o;
   }
 
+  function nudgeThumbListPaint() {
+    if (!thumbListInner) return;
+    /* 触发一次合成/重绘，避免图片已加载却要等鼠标移动才出现 */
+    var prev = thumbListInner.style.transform;
+    void thumbListInner.offsetHeight;
+    thumbListInner.style.transform = prev || "translate3d(0, 0, 0)";
+  }
+
   function assignThumbImg(img, item) {
     if (!img || img.getAttribute("data-thumb-assigned") === "1") return;
     img.setAttribute("data-thumb-assigned", "1");
@@ -72,6 +80,13 @@
         img.src = item.src;
       };
     }
+    img.addEventListener(
+      "load",
+      function () {
+        nudgeThumbListPaint();
+      },
+      { once: true }
+    );
     img.src = item.thumb || item.src;
   }
 
@@ -92,19 +107,14 @@
   function startThumbPump(center) {
     var order = buildCentrifugalOrder(center, data.length);
     var qi = 0;
-    var syncEnd = Math.min(THUMB_FIRST_SCREEN, order.length);
+    /* 打开页即给全部缩略图赋 src，避免可见下半截要等鼠标移动才出图 */
+    var syncEnd = order.length;
     for (; qi < syncEnd; qi++) {
       ensureThumbLoaded(order[qi]);
     }
-    /* 用 setTimeout 而非仅 rAF：主线程忙于大图解码时 rAF 会被挤掉，下半列表迟迟不赋 src */
-    function pump() {
-      var b = 0;
-      for (; b < THUMB_RAF_BATCH && qi < order.length; b++, qi++) {
-        ensureThumbLoaded(order[qi]);
-      }
-      if (qi < order.length) setTimeout(pump, 32);
-    }
-    if (qi < order.length) setTimeout(pump, 32);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(nudgeThumbListPaint);
+    });
   }
 
   function getTriggerY() {

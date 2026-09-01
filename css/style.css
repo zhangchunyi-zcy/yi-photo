@@ -160,8 +160,6 @@ img {
   cursor: pointer;
   line-height: 0;
   transition: opacity 0.2s ease-out;
-  /* 未出图时浅底，避免下半列表看起来像“消失” */
-  background-color: #f0f0f0;
 }
 
 /* 当前项仅隐藏显示、不改变尺寸，避免列表回流与回弹（Pablo Escudero 式） */

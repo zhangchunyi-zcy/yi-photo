@@ -329,7 +329,13 @@
       return;
     }
 
-    if (hasThumbUnderlay && mainImage.getAttribute("src") !== thumbSrc) {
+    /* src 与垫底相同（当前全站只用压缩图）时不做叠层切换，避免交棒跳变 */
+    if (!hasThumbUnderlay) {
+      fallbackSingleImg();
+      return;
+    }
+
+    if (mainImage.getAttribute("src") !== thumbSrc) {
       mainImage.src = thumbSrc;
     }
 
@@ -402,21 +408,17 @@
 
     prefetchThumbsAround(index);
 
-    /* 主图先显示压缩图垫底，再在叠层无缝叠原图（避免空窗白闪）；无 thumb 时仅拉原图 */
+    /* 主图显示：仅压缩图时直接设 src；若日后恢复原图+压缩图双轨，再走叠层升级 */
     var capIdx = index;
     mainImage.onerror = null;
     function clearMainPending() {
       if (mainImageWrap) mainImageWrap.classList.remove("is-main-pending");
     }
-    if (!item.thumb) {
-      if (mainImageWrap) {
-        mainImageWrap.classList.remove("is-main-pending");
-        mainImageWrap.classList.add("is-main-pending");
-      }
-      applyMainImageFullSrc(item.src, {
-        capIdx: capIdx,
-        onDone: clearMainPending,
-      });
+    if (!item.thumb || item.thumb === item.src) {
+      clearMainPending();
+      mainImage.src = item.src;
+      if (mainImage.complete) updateLandscapeClass();
+      else mainImage.addEventListener("load", updateLandscapeClass, { once: true });
     } else {
       clearMainPending();
       mainImage.src = item.thumb;
@@ -629,7 +631,7 @@
     img.style.display = "block";
     img.style.objectFit = "contain";
     img.style.objectPosition = objectPosition || "center center";
-    img.decoding = "sync";
+    img.decoding = "async";
     wrap.appendChild(img);
     return wrap;
   }
@@ -802,23 +804,13 @@
       mainImage.onerror = null;
       mainImage.alt = data[nextIndex].caption || "作品 " + (nextIndex + 1);
       mainImage.src = nextThumbSrc;
-      mainImage.onerror = function () {
-        mainImage.onerror = null;
-        applyMainImageFullSrc(nextSrc, {
-          guard: function () {
-            return activeTransitionId === capturedId;
-          },
-          onDone: finishReveal,
-          thumbSrc: nextThumbSrc,
-        });
-      };
 
       function finishReveal() {
         if (activeTransitionId !== capturedId) return;
-        /* 必须先解除主图区隐藏，再撤克隆层。若先删 cloneIn 而 transitioning 仍在，
-           主图 img 仍为 visibility:hidden，会露两帧白底（用户看到的「闪一下」）。 */
+        /* 必须先解除主图区隐藏，再撤克隆层，避免露白；多等两帧让主图布局稳定后再撤克隆，减少跳变 */
         if (mainImageWrap) mainImageWrap.removeAttribute("data-transitioning");
-        requestAnimationFrame(function () {
+        afterPaintFrames(function () {
+          if (activeTransitionId !== capturedId) return;
           if (cloneIn.parentNode === transitionLayer) transitionLayer.removeChild(cloneIn);
           requestAnimationFrame(function () {
             isAnimating = false;
@@ -832,7 +824,23 @@
               callback();
             }
           });
-        });
+        }, 3);
+      }
+
+      function revealSameImage() {
+        if (activeTransitionId !== capturedId) return;
+        function done() {
+          if (activeTransitionId !== capturedId) return;
+          updateLandscapeClass();
+          afterPaintFrames(finishReveal, 2);
+        }
+        if (typeof mainImage.decode === "function") {
+          mainImage.decode().then(done).catch(done);
+        } else if (mainImage.complete && mainImage.naturalWidth > 0) {
+          done();
+        } else {
+          mainImage.addEventListener("load", done, { once: true });
+        }
       }
 
       function upgradeToFull() {
@@ -846,14 +854,23 @@
         });
       }
 
-      fullImg.onload = null;
-      if (fullImg.complete && fullImg.naturalWidth > 0) {
-        upgradeToFull();
+      /* 压缩图即主图：跳过叠层二次加载，直接交棒，减轻卡顿跳变 */
+      if (nextSrc === nextThumbSrc) {
+        revealSameImage();
       } else {
-        fullImg.onload = upgradeToFull;
-        fullImg.onerror = function () {
+        mainImage.onerror = function () {
+          mainImage.onerror = null;
           upgradeToFull();
         };
+        fullImg.onload = null;
+        if (fullImg.complete && fullImg.naturalWidth > 0) {
+          upgradeToFull();
+        } else {
+          fullImg.onload = upgradeToFull;
+          fullImg.onerror = function () {
+            upgradeToFull();
+          };
+        }
       }
     }, transitionDuration);
   }

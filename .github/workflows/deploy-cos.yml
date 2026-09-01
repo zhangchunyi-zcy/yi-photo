@@ -1,5 +1,5 @@
 # 推送 main 分支后，将静态站点同步到腾讯云香港 COS，并刷新 CDN 缓存。
-# 前置：在 GitHub 仓库 Settings → Secrets 配置 TENCENT_SECRET_ID、TENCENT_SECRET_KEY、COS_BUCKET
+# 前置：GitHub Secrets：TENCENT_SECRET_ID、TENCENT_SECRET_KEY、COS_BUCKET；可选 CDN_DOMAIN
 # 详见仓库根目录《部署到腾讯云COS+CDN.md》
 
 name: Deploy to Tencent COS
@@ -11,6 +11,7 @@ on:
 
 env:
   COS_REGION: ap-hongkong
+  COSCLI_VERSION: v1.0.9
 
 jobs:
   deploy:
@@ -21,26 +22,49 @@ jobs:
 
       - name: Install coscli
         run: |
-          # 使用腾讯云官方直链，避免 GitHub release 文件名变更导致 404
-          curl -fsSL "https://cosbrowser.cloud.tencent.com/software/coscli/coscli-linux-amd64" -o coscli
+          curl -fsSL "https://github.com/tencentyun/coscli/releases/download/${COSCLI_VERSION}/coscli-${COSCLI_VERSION}-linux-amd64" -o coscli
           chmod +x coscli
           sudo mv coscli /usr/local/bin/coscli
           coscli --version
 
       - name: Configure coscli
+        env:
+          TENCENT_SECRET_ID: ${{ secrets.TENCENT_SECRET_ID }}
+          TENCENT_SECRET_KEY: ${{ secrets.TENCENT_SECRET_KEY }}
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
         run: |
-          coscli config init \
-            --secret-id "${{ secrets.TENCENT_SECRET_ID }}" \
-            --secret-key "${{ secrets.TENCENT_SECRET_KEY }}" \
-            --bucket-name "${{ secrets.COS_BUCKET }}" \
-            --region "${COS_REGION}" \
-            --ofs false \
-            --force
+          if [ -z "$TENCENT_SECRET_ID" ] || [ -z "$TENCENT_SECRET_KEY" ] || [ -z "$COS_BUCKET" ]; then
+            echo "Missing required secrets: TENCENT_SECRET_ID / TENCENT_SECRET_KEY / COS_BUCKET"
+            exit 1
+          fi
+          # 新版 coscli 的 config init 不再支持 --bucket-name，直接写配置文件更稳
+          mkdir -p "$HOME"
+          cat > "$HOME/.cos.yaml" << EOF
+          cos:
+            base:
+              secretid: ${TENCENT_SECRET_ID}
+              secretkey: ${TENCENT_SECRET_KEY}
+              sessiontoken: ""
+              protocol: https
+            buckets:
+              - name: ${COS_BUCKET}
+                alias: photo
+                region: ${COS_REGION}
+                endpoint: cos.${COS_REGION}.myqcloud.com
+                ofs: false
+          EOF
+          # 去掉 heredoc 缩进空格
+          sed -i 's/^          //' "$HOME/.cos.yaml"
+          echo "cos.yaml ready; buckets:"
+          grep -E 'name:|region:|endpoint:' "$HOME/.cos.yaml"
 
       - name: Sync site to COS
+        env:
+          COS_BUCKET: ${{ secrets.COS_BUCKET }}
         run: |
-          coscli sync . "cos://${{ secrets.COS_BUCKET }}/" \
-            --recursive \
+          coscli sync . "cos://${COS_BUCKET}/" \
+            -e "cos.${COS_REGION}.myqcloud.com" \
+            -r \
             --exclude ".git/**" \
             --exclude ".github/**" \
             --exclude ".cursor/**" \
